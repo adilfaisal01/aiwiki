@@ -2,16 +2,26 @@ import hashlib
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import config
 
 
-DB_PATH = Path("aiwiki.db")
+def _sqlite_path() -> Path:
+    url = config.DATABASE_URL
+    prefix = "sqlite:///"
+    if url.startswith(prefix):
+        path = url[len(prefix):]
+    else:
+        path = url.replace("sqlite://", "") or "aiwiki.db"
+    return Path(path)
 
 
 def _get_sqlite():
     import sqlite3
-    conn = sqlite3.connect(str(DB_PATH))
+    db_path = _sqlite_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
