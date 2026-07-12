@@ -118,5 +118,14 @@ def _ollama_generate(prompt: str, temperature: float, max_tokens: int) -> str:
     return data.get("response", "").strip()
 
 
+def wrap_content(content: str) -> str:
+    """Wrap user-provided content in a delimiter to prevent prompt injection.
+    
+    The model is instructed to treat anything between the delimiters as data,
+    not as instructions. This is defense-in-depth on top of input sanitization.
+    """
+    return f"<ARTICLE_CONTENT>\n{content}\n</ARTICLE_CONTENT>"
+
+
 def is_real_llm_enabled() -> bool:
     return _provider() not in ("simulated", "")
