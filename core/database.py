@@ -178,6 +178,16 @@ def init_db():
             timestamp TEXT NOT NULL
         )
     """)
+    _execute(conn, f"""
+        CREATE TABLE IF NOT EXISTS pending_topics (
+            id {sid},
+            topic TEXT NOT NULL UNIQUE,
+            source_article_id INTEGER,
+            category TEXT NOT NULL DEFAULT 'science',
+            queued_at TEXT NOT NULL,
+            picked_at TEXT
+        )
+    """)
     _execute(conn, """
         CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER NOT NULL
@@ -722,6 +732,73 @@ def get_all_articles() -> list[dict]:
     rows = _fetchall(conn, "SELECT id, title, slug, updated_at, article_kind FROM articles ORDER BY updated_at DESC")
     conn.close()
     return rows
+
+
+def queue_pending_topic(topic: str, source_article_id: int | None = None, category: str = "science") -> bool:
+    """Add a topic to the pending queue if not already queued or written."""
+    conn = get_db()
+    p = _param_style()
+    ts = now()
+    # Check if article already exists
+    existing = _fetchone(conn, f"SELECT id FROM articles WHERE slug = {p}", (slugify(topic),))
+    if existing:
+        conn.close()
+        return False
+    # Check if already queued
+    existing = _fetchone(conn, f"SELECT id FROM pending_topics WHERE topic = {p}", (topic,))
+    if existing:
+        conn.close()
+        return False
+    _execute(
+        conn,
+        f"INSERT INTO pending_topics (topic, source_article_id, category, queued_at) VALUES ({p}, {p}, {p}, {p})",
+        (topic, source_article_id, category, ts),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def pop_pending_topic() -> tuple[str, str] | None:
+    """Get the oldest unpicked pending topic and mark it as picked."""
+    conn = get_db()
+    p = _param_style()
+    row = _fetchone(
+        conn,
+        "SELECT id, topic, category FROM pending_topics WHERE picked_at IS NULL ORDER BY queued_at ASC LIMIT 1",
+    )
+    if not row:
+        conn.close()
+        return None
+    ts = now()
+    _execute(conn, f"UPDATE pending_topics SET picked_at = {p} WHERE id = {p}", (ts, row["id"]))
+    conn.commit()
+    conn.close()
+    return row["topic"], row["category"]
+
+
+def get_pending_topic_count() -> int:
+    conn = get_db()
+    row = _fetchone(conn, "SELECT COUNT(*) AS cnt FROM pending_topics WHERE picked_at IS NULL")
+    conn.close()
+    return row["cnt"] if row else 0
+
+
+def parse_see_also(content: str) -> list[str]:
+    """Extract [[wikilink]] topics from a See also section."""
+    import re
+    topics = []
+    # Find the See also section
+    see_also_match = re.search(r'##\s*See\s+[Aa]lso\s*\n(.*?)(?=\n##\s|\Z)', content, re.DOTALL)
+    if not see_also_match:
+        return topics
+    section = see_also_match.group(1)
+    # Find all [[Topic]] patterns
+    for match in re.finditer(r'\[\[([^\]]+)\]\]', section):
+        topic = match.group(1).strip()
+        if topic:
+            topics.append(topic)
+    return topics
 
 
 def log_agent_action(agent_name: str, action: str, article_id: int | None = None, details: str = ""):

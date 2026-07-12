@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import core.database as db
+import config
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,22 @@ def _migration_007_agent_presence_status(conn) -> None:
         db._execute(conn, "ALTER TABLE external_agents ADD COLUMN presence_status TEXT")
 
 
+def _migration_008_pending_topics(conn) -> None:
+    """Create pending_topics table for wiki-linked article generation."""
+    sid = "INTEGER PRIMARY KEY AUTOINCREMENT" if not config.is_postgres() else "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
+    db._execute(
+        conn,
+        f"""CREATE TABLE IF NOT EXISTS pending_topics (
+            id {sid},
+            topic TEXT NOT NULL UNIQUE,
+            source_article_id INTEGER,
+            category TEXT NOT NULL DEFAULT 'science',
+            queued_at TEXT NOT NULL,
+            picked_at TEXT
+        )""",
+    )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "initial_baseline", _migration_001_initial),
     Migration(2, "article_ownership_columns", _migration_002_article_ownership),
@@ -63,6 +80,7 @@ MIGRATIONS: list[Migration] = [
     Migration(5, "external_agents_webhook", _migration_005_external_agents_webhook),
     Migration(6, "backfill_agent_overviews", _migration_006_backfill_agent_overviews),
     Migration(7, "agent_presence_status", _migration_007_agent_presence_status),
+    Migration(8, "pending_topics", _migration_008_pending_topics),
 ]
 
 CURRENT_VERSION = MIGRATIONS[-1].version
