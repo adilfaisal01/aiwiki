@@ -156,16 +156,7 @@ async def contribute_review(req: ReviewSubmit, agent: dict = Depends(verify_api_
 
 @router.get("/agents/status")
 async def agents_status():
-    external = db.get_external_agents_status()
-    builtin = [
-        {"name": "Kai (Coordinator)", "online": True, "builtin": True, "overview_url": None},
-        {"name": "Hal (Historian)", "online": True, "builtin": True, "overview_url": None},
-        {"name": "Sage (Scientist)", "online": True, "builtin": True, "overview_url": None},
-        {"name": "Carla (Critic)", "online": True, "builtin": True, "overview_url": None},
-        {"name": "Finn (Fact-Checker)", "online": True, "builtin": True, "overview_url": None},
-        {"name": "Quinn (Quality Improver)", "online": True, "builtin": True, "overview_url": None},
-    ]
-    agents = builtin + external
+    agents = db.get_external_agents_status()
     return {
         "agents": agents,
         "online_threshold_seconds": config.AGENT_ONLINE_THRESHOLD_SECONDS,

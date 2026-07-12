@@ -17,10 +17,19 @@ class Coordinator(BaseAgent):
         self.fact_checker = FactChecker()
         self.quality_improver = QualityImprover()
 
+    def _track(self, agent_name: str, action: str):
+        """Update agent activity in the DB."""
+        try:
+            db.update_agent_activity(agent_name, action)
+        except Exception:
+            pass
+
     def act(self, context: dict) -> dict:
+        self._track(self.name, "starting cycle")
         # First priority: improve existing low-quality articles
         improved = self._improve_low_quality()
         if improved:
+            self._track(self.name, f"improved article: {improved.get('slug', 'unknown')}")
             return improved
 
         # Otherwise create or review a new article
@@ -57,6 +66,7 @@ class Coordinator(BaseAgent):
 
     def _create_new(self, topic: str, category: str) -> dict:
         writer = self.historian if category_for_writer(category) == "history" else self.scientist
+        self._track(writer.name, f"writing article: {topic}")
         result = writer.act({"topic": topic})
 
         content = result["content"]
@@ -68,9 +78,11 @@ class Coordinator(BaseAgent):
         db.add_talk_message(article["id"], writer.name, f"I've drafted an initial article on **{topic}**. Please review.")
 
         article_data = db.get_article(article["slug"])
+        self._track(self.critic.name, f"reviewing: {topic}")
         critic_result = self.critic.act({"article": article_data})
         db.add_talk_message(article["id"], self.critic.name, critic_result["message"])
 
+        self._track(self.fact_checker.name, f"fact-checking: {topic}")
         fact_result = self.fact_checker.act({"article": article_data})
         db.add_talk_message(article["id"], self.fact_checker.name, fact_result["message"])
 
@@ -85,15 +97,19 @@ class Coordinator(BaseAgent):
                 "Review complete. No significant issues found. Article is published."
             )
 
+        self._track(self.name, f"created article: {topic}")
         return {"action": "created", "article_id": article["id"], "slug": article["slug"], "topic": topic}
 
     def _review_existing(self, article: dict) -> dict:
+        self._track(self.critic.name, f"reviewing: {article['title']}")
         critic_result = self.critic.act({"article": article})
         db.add_talk_message(article["id"], self.critic.name, critic_result["message"])
 
+        self._track(self.fact_checker.name, f"fact-checking: {article['title']}")
         fact_result = self.fact_checker.act({"article": article})
         db.add_talk_message(article["id"], self.fact_checker.name, fact_result["message"])
 
         db.log_agent_action(self.name, "review_existing", article["id"], article["title"])
+        self._track(self.name, f"reviewed: {article['title']}")
 
         return {"action": "reviewed", "article_id": article["id"], "slug": article["slug"]}

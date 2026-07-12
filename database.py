@@ -180,6 +180,7 @@ def init_db():
     _migrate_articles(conn)
     _migrate_external_agents(conn)
     _backfill_agent_overviews(conn)
+    _seed_builtin_agents(conn)
     conn.commit()
     conn.close()
 
@@ -208,6 +209,12 @@ def _migrate_external_agents(conn):
         _execute(conn, "ALTER TABLE external_agents ADD COLUMN last_seen_at TEXT")
     if not _column_exists(conn, "external_agents", "overview_article_id"):
         _execute(conn, "ALTER TABLE external_agents ADD COLUMN overview_article_id INTEGER")
+    if not _column_exists(conn, "external_agents", "role"):
+        _execute(conn, "ALTER TABLE external_agents ADD COLUMN role TEXT NOT NULL DEFAULT 'external'")
+    if not _column_exists(conn, "external_agents", "last_action"):
+        _execute(conn, "ALTER TABLE external_agents ADD COLUMN last_action TEXT")
+    if not _column_exists(conn, "external_agents", "last_action_at"):
+        _execute(conn, "ALTER TABLE external_agents ADD COLUMN last_action_at TEXT")
 
 
 def _ensure_schema_version(conn):
@@ -448,8 +455,8 @@ def register_external_agent(name: str) -> dict | None:
 
     try:
         agent_id = _execute_returning(
-            conn, f"INSERT INTO external_agents (name, api_key_hash, created_at, last_seen_at) VALUES ({p}, {p}, {p}, {p}){returning}",
-            (name, api_key_hash, ts, ts))
+            conn, f"INSERT INTO external_agents (name, api_key_hash, created_at, last_seen_at, role) VALUES ({p}, {p}, {p}, {p}, {p}){returning}",
+            (name, api_key_hash, ts, ts, "external"))
         overview = _create_agent_overview_conn(conn, agent_id, name)
         if not overview:
             conn.rollback()
@@ -472,7 +479,7 @@ def register_external_agent(name: str) -> dict | None:
 def verify_external_agent(api_key: str) -> dict | None:
     conn = get_db()
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    row = _fetchone(conn, f"SELECT id, name FROM external_agents WHERE api_key_hash = {_param_style()} AND is_active = 1",
+    row = _fetchone(conn, f"SELECT id, name FROM external_agents WHERE api_key_hash = {_param_style()} AND is_active = 1 AND role = 'external'",
                     (api_key_hash,))
     if row:
         ts = now()
@@ -496,23 +503,57 @@ def _parse_iso(ts: str | None) -> datetime | None:
 
 
 BUILTIN_AGENTS = [
-    {"name": "Kai (Coordinator)", "role": "coordinator", "online": True},
-    {"name": "Hal (Historian)", "role": "history", "online": True},
-    {"name": "Sage (Scientist)", "role": "science", "online": True},
-    {"name": "Carla (Critic)", "role": "critic", "online": True},
-    {"name": "Finn (Fact-Checker)", "role": "fact_checker", "online": True},
-    {"name": "Quinn (Quality Improver)", "role": "quality_improver", "online": True},
+    {"name": "Kai (Coordinator)", "role": "coordinator"},
+    {"name": "Hal (Historian)", "role": "history"},
+    {"name": "Sage (Scientist)", "role": "science"},
+    {"name": "Carla (Critic)", "role": "critic"},
+    {"name": "Finn (Fact-Checker)", "role": "fact_checker"},
+    {"name": "Quinn (Quality Improver)", "role": "quality_improver"},
 ]
+
+
+def _seed_builtin_agents(conn):
+    """Insert builtin agents into external_agents table if not present."""
+    p = _param_style()
+    ts = now()
+    for agent in BUILTIN_AGENTS:
+        existing = _fetchone(conn, f"SELECT id FROM external_agents WHERE name = {p} AND role = {p}", (agent["name"], "builtin"))
+        if existing:
+            continue
+        # Builtin agents get a deterministic hash so they don't collide with real API keys
+        builtin_hash = hashlib.sha256(f"builtin:{agent['name']}".encode()).hexdigest()
+        _execute(
+            conn,
+            f"INSERT INTO external_agents (name, api_key_hash, created_at, is_active, role, last_seen_at) "
+            f"VALUES ({p}, {p}, {p}, 1, {p}, {p})",
+            (agent["name"], builtin_hash, ts, "builtin", ts),
+        )
+
+
+def update_agent_activity(agent_name: str, action: str = ""):
+    """Update last_seen_at and optionally last_action for any agent (builtin or external)."""
+    conn = get_db()
+    ts = now()
+    p = _param_style()
+    _execute(
+        conn,
+        f"UPDATE external_agents SET last_seen_at = {p}, last_action = {p}, last_action_at = {p} WHERE name = {p}",
+        (ts, action, ts, agent_name),
+    )
+    conn.commit()
+    conn.close()
 
 
 def get_external_agents_status() -> list[dict]:
     conn = get_db()
     rows = _fetchall(
         conn,
-        """SELECT e.id, e.name, e.created_at, e.last_seen_at, e.is_active, a.slug AS overview_slug
+        """SELECT e.id, e.name, e.created_at, e.last_seen_at, e.is_active, e.role, e.last_action, e.last_action_at,
+                  a.slug AS overview_slug
            FROM external_agents e
            LEFT JOIN articles a ON a.id = e.overview_article_id
-           ORDER BY e.name ASC""",
+           WHERE e.is_active = 1
+           ORDER BY e.role ASC, e.name ASC""",
     )
     conn.close()
 
@@ -520,8 +561,6 @@ def get_external_agents_status() -> list[dict]:
     now_dt = datetime.now(timezone.utc)
     agents = []
     for row in rows:
-        if not row.get("is_active"):
-            continue
         last_seen = row.get("last_seen_at")
         seen_dt = _parse_iso(last_seen)
         online = bool(seen_dt and (now_dt - seen_dt).total_seconds() <= threshold)
@@ -529,12 +568,15 @@ def get_external_agents_status() -> list[dict]:
         agents.append({
             "id": row["id"],
             "name": row["name"],
+            "role": row.get("role", "external"),
             "created_at": row["created_at"],
             "last_seen_at": last_seen,
+            "last_action": row.get("last_action"),
+            "last_action_at": row.get("last_action_at"),
             "online": online,
             "overview_slug": overview_slug,
             "overview_url": f"/wiki/{overview_slug}" if overview_slug else None,
-            "builtin": False,
+            "builtin": row.get("role") == "builtin",
         })
 
     agents.sort(key=lambda a: (not a["online"], a["last_seen_at"] or "", a["name"]))
