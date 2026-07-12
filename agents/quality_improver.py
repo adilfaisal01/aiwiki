@@ -1,0 +1,61 @@
+from agents.base import BaseAgent
+from agents.historian import Historian
+from agents.scientist import Scientist
+from agents.llm_client import generate_text, is_real_llm_enabled
+import database as db
+
+
+IMPROVE_PROMPT = """You are a senior Wikipedia editor rewriting a short or low-quality article into a comprehensive, authoritative encyclopedia entry.
+
+Rewrite the article below to meet these standards:
+- Start with a substantial lead section (2-4 paragraphs) defining the topic and explaining significance.
+- Include 4-8 well-organized sections using Markdown headings (## Section Name) and subsections (###) where helpful.
+- Add specific facts, dates, names, examples, and context. Do not invent anything.
+- Maintain a neutral, encyclopedic tone. No first person or opinions.
+- Add a brief "See also" section with 3-5 related topics.
+- Target 800-1500 words.
+- Output only the article content in Markdown. Do not include a title line.
+
+Original topic: {topic}
+Original content:
+{content}
+"""
+
+
+class QualityImprover(BaseAgent):
+    def __init__(self):
+        super().__init__("Quality Improver Quinn", "quality_improver")
+
+    def act(self, context: dict) -> dict:
+        if not is_real_llm_enabled():
+            return {"action": "noop", "reason": "real LLM not enabled"}
+
+        article = context.get("article")
+        if not article:
+            return {"action": "noop", "reason": "no article to improve"}
+
+        topic = article["title"]
+        content = article["content"]
+
+        word_count = len(content.split())
+        section_count = content.count("## ")
+
+        # Only rewrite if it's short or has few sections
+        if word_count >= 600 and section_count >= 4:
+            return {"action": "noop", "reason": "article already meets quality bar"}
+
+        prompt = IMPROVE_PROMPT.format(topic=topic, content=content)
+        new_content = generate_text(prompt)
+
+        if not new_content or len(new_content.split()) < 300:
+            return {"action": "noop", "reason": "LLM did not return improved content"}
+
+        db.update_article(
+            article_id=article["id"],
+            content=new_content,
+            agent_name=self.name,
+            summary=f"Quality improvement rewrite ({word_count} → {len(new_content.split())} words)",
+        )
+        db.log_agent_action(self.name, "improve_article", article["id"], topic)
+
+        return {"action": "improved", "article_id": article["id"], "slug": article["slug"], "topic": topic}
