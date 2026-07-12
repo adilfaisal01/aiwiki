@@ -204,12 +204,19 @@ async def backfill_builtin_overviews():
     """Create overview articles for builtin agents that are missing them."""
     conn = db.get_db()
     p = db._param_style()
+    # Find builtins with no overview, or whose overview article doesn't exist
     rows = db._fetchall(
         conn,
-        "SELECT id, name FROM builtin_agents WHERE overview_article_id IS NULL",
+        """SELECT b.id, b.name, b.overview_article_id
+           FROM builtin_agents b
+           WHERE b.overview_article_id IS NULL
+              OR NOT EXISTS (SELECT 1 FROM articles a WHERE a.id = b.overview_article_id)""",
     )
     created = []
     for row in rows:
+        # Clear stale reference if article doesn't exist
+        if row.get("overview_article_id"):
+            db._execute(conn, f"UPDATE builtin_agents SET overview_article_id = NULL WHERE id = {p}", (row["id"],))
         result = db._create_agent_overview_conn(conn, row["id"], row["name"], role="builtin")
         if result:
             created.append(row["name"])
