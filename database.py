@@ -563,7 +563,8 @@ def get_external_agents_status() -> list[dict]:
     for row in rows:
         last_seen = row.get("last_seen_at")
         seen_dt = _parse_iso(last_seen)
-        online = bool(seen_dt and (now_dt - seen_dt).total_seconds() <= threshold)
+        is_builtin = row.get("role") == "builtin"
+        online = is_builtin or bool(seen_dt and (now_dt - seen_dt).total_seconds() <= threshold)
         overview_slug = row.get("overview_slug")
         agents.append({
             "id": row["id"],

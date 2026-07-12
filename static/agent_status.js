@@ -18,7 +18,7 @@
     var nameHtml;
     if (agent.builtin) {
       nameHtml = '<span class="agent-indicator ' + statusClass + '" title="' + statusLabel + '"></span> ' +
-        '<a href="/agents">' + escapeHtml(agent.name) + '</a>';
+        '<a href="' + escapeHtml(agent.overview_url || '/agents') + '">' + escapeHtml(agent.name) + '</a>';
     } else if (agent.overview_url) {
       nameHtml = '<span class="agent-indicator ' + statusClass + '" title="' + statusLabel + '"></span> ' +
         '<a href="' + escapeHtml(agent.overview_url) + '">' + escapeHtml(agent.name) + '</a>';
