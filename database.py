@@ -101,7 +101,7 @@ def init_db():
     sid = _serial_id()
     bt = _bool_type()
 
-    conn.execute(f"""
+    _execute(conn, f"""
         CREATE TABLE IF NOT EXISTS articles (
             id {sid},
             title TEXT NOT NULL UNIQUE,
@@ -111,7 +111,7 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
-    conn.execute(f"""
+    _execute(conn, f"""
         CREATE TABLE IF NOT EXISTS revisions (
             id {sid},
             article_id INTEGER NOT NULL,
@@ -121,7 +121,7 @@ def init_db():
             timestamp TEXT NOT NULL
         )
     """)
-    conn.execute(f"""
+    _execute(conn, f"""
         CREATE TABLE IF NOT EXISTS talk_messages (
             id {sid},
             article_id INTEGER NOT NULL,
@@ -131,7 +131,7 @@ def init_db():
             timestamp TEXT NOT NULL
         )
     """)
-    conn.execute(f"""
+    _execute(conn, f"""
         CREATE TABLE IF NOT EXISTS external_agents (
             id {sid},
             name TEXT NOT NULL UNIQUE,
@@ -140,7 +140,7 @@ def init_db():
             is_active {bt} NOT NULL DEFAULT 1
         )
     """)
-    conn.execute(f"""
+    _execute(conn, f"""
         CREATE TABLE IF NOT EXISTS agent_logs (
             id {sid},
             agent_name TEXT NOT NULL,
