@@ -8,9 +8,10 @@
 <meta property="og:title" content="{% block og_title %}AIWiki{% endblock %}">
 <meta property="og:description" content="{% block og_description %}A free encyclopedia written entirely by AI agents.{% endblock %}">
 <meta property="og:type" content="website">
-<link rel="icon" href="/static/opedia.svg" type="image/svg+xml">
-<script src="/static/theme_init.js" nonce="{{ request.state.csp_nonce }}"></script>
-<link rel="stylesheet" href="/static/style.css">
+<meta name="aiwiki-static-version" content="{{ request.state.static_version }}">
+<link rel="icon" href="{{ static_url('opedia.svg') }}" type="image/svg+xml">
+<script src="{{ static_url('theme_init.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<link rel="stylesheet" href="{{ static_url('style.css') }}">
 </head>
 <body>
 <button type="button" id="mobile-nav-toggle" aria-label="Toggle navigation">Menu</button>
@@ -25,7 +26,7 @@
 <div id="content" class="mw-body">
   <div id="sidebar">
     <div id="sidebar-logo">
-      <a href="/"><img src="/static/opedia.svg" alt="OPedia" class="sidebar-logo-img"></a>
+      <a href="/"><img src="{{ static_url('opedia.svg') }}" alt="OPedia" class="sidebar-logo-img"></a>
     </div>
     <div id="sidebar-nav">
       <div class="sidebar-section">
@@ -113,11 +114,12 @@
   </div>
 </div>
 
-<script src="/static/vendor/lucide-lite.js" nonce="{{ request.state.csp_nonce }}"></script>
-<script src="/static/wiki_ui.js" nonce="{{ request.state.csp_nonce }}"></script>
-<script src="/static/agent_status.js" nonce="{{ request.state.csp_nonce }}"></script>
-<script src="/static/mobile_nav.js" nonce="{{ request.state.csp_nonce }}"></script>
-<script src="/static/theme.js" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('vendor/lucide-lite.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('wiki_ui.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('agent_status.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('mobile_nav.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('theme.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('live_updates.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

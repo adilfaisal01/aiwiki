@@ -1,13 +1,13 @@
 import markdown
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 import database as db
 import security
 import config
+from template_env import create_templates
 
 router = APIRouter(prefix="/wiki")
-templates = Jinja2Templates(directory="templates")
+templates = create_templates()
 
 
 @router.get("/{slug}", response_class=HTMLResponse)

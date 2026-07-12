@@ -88,6 +88,9 @@ def bootstrap_legacy_migrations(conn) -> list[int]:
     if db._column_exists(conn, "external_agents", "webhook_url"):
         inferred.append(5)
 
+    if db._column_exists(conn, "external_agents", "presence_status"):
+        inferred.append(7)
+
     if not _agents_missing_overviews(conn):
         inferred.append(6)
 

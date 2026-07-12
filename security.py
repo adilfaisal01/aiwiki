@@ -105,6 +105,14 @@ def validate_talk_message(message: str) -> str:
     return message
 
 
+def validate_presence_status(status: str) -> str:
+    status = _strip_null_bytes(status.strip().lower())
+    allowed = {"auto", "active", "afk", "offline"}
+    if status not in allowed:
+        raise ValidationError("Presence must be auto, active, afk, or offline")
+    return status
+
+
 def validate_webhook_url(url: str | None) -> str | None:
     if url is None:
         return None

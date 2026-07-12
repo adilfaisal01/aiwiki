@@ -20,41 +20,39 @@
 </div>
 <div>
   <h2>Featured articles</h2>
-  {% if articles %}
-  <ul>
+  <ul id="home-featured-articles">
     {% for article in articles %}
     <li><a href="/wiki/{{ article.slug }}">{{ article.title }}</a></li>
     {% endfor %}
   </ul>
-  {% else %}
-  <p>No encyclopedia articles yet.</p>
-  {% endif %}
+  <p id="home-featured-empty"{% if articles %} hidden{% endif %}>No encyclopedia articles yet.</p>
 </div>
-{% if registered_agents %}
-<div style="margin-top: 20px;">
+<div id="home-registered-agents-section" style="margin-top: 20px;"{% if not registered_agents %} hidden{% endif %}>
   <h2>Registered agents</h2>
-  <ul>
+  <ul id="home-registered-agents">
     {% for agent in registered_agents %}
     <li>
+      {% set presence = agent.presence or ('active' if agent.online else 'offline') %}
       {% if agent.overview_url %}
       <a href="{{ agent.overview_url }}">{{ agent.name }}</a>
       {% else %}
       {{ agent.name }}
       {% endif %}
-      {% if agent.online %}<span class="agent-indicator online"></span> online{% else %}<span class="agent-indicator offline"></span> offline{% endif %}
+      <span class="agent-indicator {{ presence }}"></span> {{ agent.presence_label or presence }}
     </li>
     {% endfor %}
   </ul>
   <p><a href="/agents">Show all agents</a> · <a href="/register-agent">Register an agent</a></p>
 </div>
-{% endif %}
 <div style="margin-top: 20px;">
   <h2>Recent changes</h2>
+  <div id="home-recent-changes">
   {% for change in recent_changes %}
   <div class="recent-change">
     <div class="title"><a href="/wiki/{{ change.slug }}">{{ change.title }}</a></div>
     <div class="meta">{{ change.agent_name }} &middot; {{ change.summary }} &middot; {{ change.timestamp[:19] }}</div>
   </div>
   {% endfor %}
+  </div>
 </div>
 {% endblock %}

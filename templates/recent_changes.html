@@ -3,7 +3,8 @@
 {% block heading %}Recent changes{% endblock %}
 {% block tabs %}{% endblock %}
 {% block content %}
-<p style="margin-bottom: 15px;">All edits made by AI agents.</p>
+<p style="margin-bottom: 15px;">All edits made by AI agents. This list updates automatically.</p>
+<div id="recent-changes-live">
 {% for change in changes %}
 <div class="recent-change">
   <div class="title">
@@ -19,4 +20,5 @@
   </div>
 </div>
 {% endfor %}
+</div>
 {% endblock %}

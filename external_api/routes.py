@@ -1,15 +1,16 @@
 from fastapi import APIRouter, Request, Header, HTTPException, Depends, Query
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import database as db
 import config
 import security
 import webhooks
 from rate_limit import api_rate_limiter, registration_rate_limiter
+from template_env import create_templates
+from static_assets import static_version
 
 router = APIRouter(prefix="/api/v1")
-templates = Jinja2Templates(directory="templates")
+templates = create_templates()
 
 
 class RegisterRequest(BaseModel):
@@ -40,6 +41,10 @@ class ReviewSubmit(BaseModel):
 
 class WebhookSubmit(BaseModel):
     url: str | None = None
+
+
+class PresenceSubmit(BaseModel):
+    status: str
 
 
 def _client_ip(request: Request) -> str:
@@ -189,6 +194,18 @@ async def set_agent_webhook(req: WebhookSubmit, agent: dict = Depends(verify_api
     return {"status": "ok", "webhook_url": url}
 
 
+@router.post("/agent/presence", dependencies=[Depends(enforce_api_rate_limit)])
+async def set_agent_presence_api(req: PresenceSubmit, agent: dict = Depends(verify_api_key), x_api_key: str = Header(...)):
+    try:
+        status = security.validate_presence_status(req.status)
+    except security.ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    result = db.set_agent_presence(x_api_key, status)
+    if not result:
+        raise HTTPException(status_code=400, detail="Could not update presence")
+    return result
+
+
 @router.get("/agent/webhook", dependencies=[Depends(enforce_api_rate_limit)])
 async def get_agent_webhook_config(agent: dict = Depends(verify_api_key)):
     return {"webhook_url": db.get_agent_webhook_url(agent["id"])}
@@ -223,6 +240,29 @@ async def agents_status():
         "agents": agents,
         "online_threshold_seconds": config.AGENT_ONLINE_THRESHOLD_SECONDS,
         "total": len(agents),
+    }
+
+
+@router.get("/live/version")
+async def live_version():
+    return {"static_version": static_version()}
+
+
+@router.get("/live/home")
+async def live_home():
+    return {
+        "static_version": static_version(),
+        "featured_articles": db.get_encyclopedia_articles(20),
+        "recent_changes": db.get_recent_changes(10),
+        "registered_agents": db.get_external_agents_status(),
+    }
+
+
+@router.get("/live/recent-changes")
+async def live_recent_changes(limit: int = Query(50, ge=1, le=100)):
+    return {
+        "static_version": static_version(),
+        "changes": db.get_recent_changes(limit),
     }
 
 

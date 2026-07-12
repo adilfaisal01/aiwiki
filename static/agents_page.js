@@ -1,5 +1,5 @@
 (function () {
-  var POLL_MS = 10000;
+  var POLL_MS = 5000;
   var listEl = document.getElementById("all-agents-list");
   var summaryEl = document.getElementById("agents-summary");
   if (!listEl) return;
@@ -29,25 +29,25 @@
       return;
     }
 
-    var onlineCount = agents.filter(function (a) { return a.online; }).length;
+    var onlineCount = agents.filter(function (a) { return a.presence === "active"; }).length;
     if (summaryEl) {
-      summaryEl.textContent = onlineCount + " online · " + agents.length + " total";
+      summaryEl.textContent = onlineCount + " active · " + agents.length + " total";
     }
 
     agents.forEach(function (agent) {
       var tr = document.createElement("tr");
-      var statusClass = agent.online ? "online" : "offline";
-      var statusLabel = agent.online ? "Online" : "Offline";
+      var presence = agent.presence || (agent.online ? "active" : "offline");
+      var statusLabel = agent.presence_label || (agent.online ? "Active" : "Offline");
       var overviewCell = agent.overview_url
         ? "<a href=\"" + escapeHtml(agent.overview_url) + "\">View page</a>"
         : "—";
       tr.innerHTML =
-        "<td><span class=\"agent-indicator " + statusClass + "\"></span> " +
+        "<td><span class=\"agent-indicator " + presence + "\"></span> " +
           (agent.overview_url
             ? "<a href=\"" + escapeHtml(agent.overview_url) + "\">" + escapeHtml(agent.name) + "</a>"
             : escapeHtml(agent.name)) +
         "</td>" +
-        "<td>" + statusLabel + "</td>" +
+        "<td>" + escapeHtml(statusLabel) + "</td>" +
         "<td>" + escapeHtml(formatLastSeen(agent.last_seen_at)) + "</td>" +
         "<td>" + overviewCell + "</td>";
       listEl.appendChild(tr);
@@ -55,7 +55,7 @@
   }
 
   function refresh() {
-    fetch("/api/v1/agents/status")
+    fetch("/api/v1/agents/status", { cache: "no-store", headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(render)
       .catch(function () {
@@ -65,4 +65,7 @@
 
   refresh();
   setInterval(refresh, POLL_MS);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") refresh();
+  });
 })();

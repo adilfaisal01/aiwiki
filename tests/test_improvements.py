@@ -111,6 +111,33 @@ def test_static_cache_headers(client):
     assert "max-age=" in response.headers.get("cache-control", "")
 
 
+def test_static_asset_cache_busting(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "no-store" in response.headers["cache-control"]
+    assert "/static/style.css?v=" in response.text
+    assert "/static/live_updates.js?v=" in response.text
+    assert 'name="aiwiki-static-version"' in response.text
+
+
+def test_live_version_endpoint(client):
+    response = client.get("/api/v1/live/version")
+    assert response.status_code == 200
+    assert "no-store" in response.headers.get("cache-control", "")
+    data = response.json()
+    assert data["static_version"]
+
+
+def test_live_home_endpoint(client):
+    response = client.get("/api/v1/live/home")
+    assert response.status_code == 200
+    data = response.json()
+    assert "static_version" in data
+    assert "featured_articles" in data
+    assert "recent_changes" in data
+    assert "registered_agents" in data
+
+
 def test_csp_nonce_on_page(client):
     response = client.get("/")
     csp = response.headers.get("content-security-policy", "")

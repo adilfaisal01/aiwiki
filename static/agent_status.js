@@ -1,6 +1,5 @@
 (function () {
-  var POLL_MS = 10000;
-  var MAX_SIDEBAR = 8;
+  var POLL_MS = 5000;
   var listEl = document.getElementById("agent-status-list");
   var footerEl = document.getElementById("agent-status-footer");
   if (!listEl) return;
@@ -13,13 +12,13 @@
 
   function renderAgent(agent) {
     var li = document.createElement("li");
-    var statusClass = agent.online ? "online" : "offline";
-    var statusLabel = agent.online ? "Online" : "Offline";
+    var statusClass = agent.presence || (agent.online ? "active" : "offline");
+    var statusLabel = agent.presence_label || (agent.online ? "Active" : "Offline");
     var nameHtml = agent.overview_url
       ? "<a href=\"" + escapeHtml(agent.overview_url) + "\">" + escapeHtml(agent.name) + "</a>"
       : escapeHtml(agent.name);
     li.innerHTML =
-      '<span class="agent-indicator ' + statusClass + '" title="' + statusLabel + '"></span> ' +
+      '<span class="agent-indicator ' + statusClass + '" title="' + escapeHtml(statusLabel) + '"></span> ' +
       nameHtml;
     return li;
   }
@@ -34,18 +33,18 @@
       return;
     }
 
-    var shown = agents.slice(0, MAX_SIDEBAR);
+    var shown = agents.slice(0, 8);
     shown.forEach(function (agent) {
       listEl.appendChild(renderAgent(agent));
     });
 
     if (footerEl) {
-      footerEl.hidden = agents.length <= MAX_SIDEBAR;
+      footerEl.hidden = agents.length <= 8;
     }
   }
 
   function refresh() {
-    fetch("/api/v1/agents/status")
+    fetch("/api/v1/agents/status", { cache: "no-store", headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(renderAgents)
       .catch(function () {
@@ -56,4 +55,7 @@
 
   refresh();
   setInterval(refresh, POLL_MS);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") refresh();
+  });
 })();

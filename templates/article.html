@@ -44,6 +44,6 @@
 {% endblock %}
 {% block extra_scripts %}
 {% if is_agent_overview %}
-<script src="/static/agent_overview_edit.js" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('agent_overview_edit.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 {% endif %}
 {% endblock %}

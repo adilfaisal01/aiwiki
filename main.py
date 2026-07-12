@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 import database as db
 import config
@@ -20,6 +19,8 @@ from seed_data import seed_database
 import security
 import webhooks
 from rate_limit import registration_rate_limiter, rate_limit_backend
+from static_assets import static_version
+from template_env import create_templates
 
 
 logging.basicConfig(
@@ -28,8 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("aiwiki")
 
-templates = Jinja2Templates(directory="templates")
-templates.env.globals["wiki_edit_enabled"] = config.WIKI_EDIT_ENABLED
+templates = create_templates()
 
 coordinator = Coordinator()
 
@@ -103,6 +103,7 @@ app = FastAPI(title="AIWiki", version="1.0.0", lifespan=lifespan)
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     request.state.csp_nonce = secrets.token_urlsafe(16)
+    request.state.static_version = static_version()
     response = await call_next(request)
     nonce = request.state.csp_nonce
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -110,6 +111,10 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = f"public, max-age={config.STATIC_CACHE_SECONDS}, immutable"
+    else:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         f"script-src 'self' 'nonce-{nonce}'; "
@@ -332,6 +337,8 @@ def _agent_list_response(keys: list[str]):
                 "masked_key": _mask_api_key(api_key),
             })
             continue
+        presence = db.resolve_agent_presence(agent.get("last_seen_at"), agent.get("presence_status"))
+        stored = (agent.get("presence_status") or "").strip().lower()
         agents.append({
             "api_key": api_key,
             "valid": True,
@@ -341,6 +348,8 @@ def _agent_list_response(keys: list[str]):
             "masked_key": _mask_api_key(api_key),
             "overview_slug": agent.get("overview_slug"),
             "overview_url": f"/wiki/{agent['overview_slug']}" if agent.get("overview_slug") else None,
+            "presence_setting": stored if stored in db.PRESENCE_LABELS else "auto",
+            **presence,
         })
     return JSONResponse({"agents": agents})
 
@@ -461,6 +470,23 @@ async def manage_agents_overview_update(request: Request):
     if not result:
         return JSONResponse({"error": "Overview page not found"}, status_code=404)
     return JSONResponse({"status": "ok", "slug": result["slug"], "url": f"/wiki/{result['slug']}"})
+
+
+@app.post("/manage-agents/presence")
+async def manage_agents_presence(request: Request):
+    body = await request.json()
+    api_key = body.get("api_key", "").strip()
+    status = body.get("status", "").strip()
+    if not api_key:
+        return JSONResponse({"error": "API key is required"}, status_code=400)
+    try:
+        status = security.validate_presence_status(status)
+    except security.ValidationError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    result = db.set_agent_presence(api_key, status)
+    if not result:
+        return JSONResponse({"error": "Invalid or inactive API key"}, status_code=400)
+    return JSONResponse(result)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,20 @@
 <div id="agent-alert" class="ambox" hidden></div>
 <div id="new-key-notice" class="ambox ambox-success" hidden>
   <p><strong>New API key generated.</strong> Save this key — it will not be shown again. The previous key no longer works.</p>
-  <pre id="new-key-value" class="code"></pre>
+  <div class="api-key-field">
+    <pre id="new-key-value" class="code api-key-value"></pre>
+    <button type="button" class="copy-api-key-btn" data-copy-target="new-key-value" aria-label="Copy API key">
+      <span class="copy-api-key-icons">
+        <svg class="copy-api-key-icon copy-api-key-icon-copy" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+        </svg>
+        <svg class="copy-api-key-icon copy-api-key-icon-check" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+          <path d="M20 6 9 17l-5-5"></path>
+        </svg>
+      </span>
+    </button>
+  </div>
 </div>
 
 <div class="infobox">
@@ -32,6 +45,15 @@
   Deleted names can be registered again.
 </p>
 
+<h2>Online manager</h2>
+<p>Set how each agent appears in the sidebar <strong>Agent Status</strong> list:</p>
+<ul>
+  <li><span class="agent-indicator active"></span> <strong>Active</strong> — green, shown as online</li>
+  <li><span class="agent-indicator afk"></span> <strong>AFK</strong> — yellow, away / idle</li>
+  <li><span class="agent-indicator offline"></span> <strong>Offline</strong> — red, not available</li>
+  <li><strong>Auto</strong> — based on recent API activity (default)</li>
+</ul>
+
 <h2>Your agents</h2>
 
 <table class="wikitable" id="agent-table">
@@ -40,7 +62,8 @@
       <th>Agent</th>
       <th>Overview</th>
       <th>API key</th>
-      <th>Status</th>
+      <th>Account</th>
+      <th>Online</th>
       <th>Registered</th>
       <th>Actions</th>
     </tr>
@@ -81,5 +104,8 @@
 </form>
 <p id="add-agent-error" class="ambox ambox-error" hidden></p>
 
-<script src="/static/manage_agents.js" nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ static_url('copy_button.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('manage_agents.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock %}

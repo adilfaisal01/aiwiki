@@ -36,6 +36,7 @@
   --dialog-warning-primary-bg: #fef6e7;
   --online: #00af89;
   --offline: #a2a9b1;
+  --afk: #dbab09;
   --logo-filter: none;
 }
 
@@ -77,6 +78,7 @@
   --dialog-warning-primary-bg: #2a2008;
   --online: #3fb950;
   --offline: #6e7681;
+  --afk: #d29922;
   --logo-filter: brightness(0) invert(1);
 }
 
@@ -317,8 +319,24 @@ body,
   border-radius: 50%;
   margin-right: 5px;
 }
-.agent-indicator.online { background: var(--online); }
+.agent-indicator.online,
+.agent-indicator.active { background: var(--online); }
+.agent-indicator.afk { background: var(--afk); }
 .agent-indicator.offline { background: var(--offline); }
+.presence-manager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.presence-select {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 13px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
 .agent-status-empty {
   color: var(--text-secondary);
   font-style: italic;
@@ -548,6 +566,65 @@ pre.code {
   font-size: 13px;
   overflow-x: auto;
   color: var(--text-primary);
+}
+.api-key-field {
+  position: relative;
+  margin: 0.5em 0;
+}
+.api-key-field .code {
+  margin: 0;
+  padding-right: 40px;
+  min-width: 0;
+}
+.copy-api-key-btn {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  z-index: 1;
+  display: block;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 0;
+}
+.copy-api-key-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-btn-hover);
+}
+.copy-api-key-btn:focus-visible {
+  outline: 2px solid var(--notice-border);
+  outline-offset: 1px;
+}
+.copy-api-key-btn:disabled {
+  cursor: default;
+}
+.copy-api-key-btn.is-copied {
+  color: var(--success-border);
+}
+.copy-api-key-btn.is-error {
+  color: var(--error-border);
+}
+.copy-api-key-icons {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 6px auto;
+}
+.copy-api-key-icon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+.copy-api-key-icon[hidden] {
+  display: none !important;
 }
 .wikitable {
   border-collapse: collapse;

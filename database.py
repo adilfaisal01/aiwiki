@@ -487,11 +487,67 @@ def _parse_iso(ts: str | None) -> datetime | None:
         return None
 
 
+PRESENCE_LABELS = {
+    "active": "Active",
+    "afk": "AFK",
+    "offline": "Offline",
+}
+
+
+def resolve_agent_presence(
+    last_seen_at: str | None,
+    presence_status: str | None,
+    threshold: int | None = None,
+    now_dt: datetime | None = None,
+) -> dict:
+    manual = (presence_status or "").strip().lower()
+    if manual in PRESENCE_LABELS:
+        return {
+            "presence": manual,
+            "presence_mode": "manual",
+            "presence_label": PRESENCE_LABELS[manual],
+            "online": manual == "active",
+        }
+
+    threshold = threshold if threshold is not None else config.AGENT_ONLINE_THRESHOLD_SECONDS
+    now_dt = now_dt or datetime.now(timezone.utc)
+    seen_dt = _parse_iso(last_seen_at)
+    auto_active = bool(seen_dt and (now_dt - seen_dt).total_seconds() <= threshold)
+    presence = "active" if auto_active else "offline"
+    return {
+        "presence": presence,
+        "presence_mode": "auto",
+        "presence_label": PRESENCE_LABELS[presence],
+        "online": auto_active,
+    }
+
+
+def set_agent_presence(api_key: str, status: str) -> dict | None:
+    status = status.strip().lower()
+    if status not in ("auto", *PRESENCE_LABELS.keys()):
+        return None
+    agent = get_external_agent_details(api_key)
+    if not agent or not agent.get("is_active"):
+        return None
+    stored = None if status == "auto" else status
+    conn = get_db()
+    p = _param_style()
+    _execute(conn, f"UPDATE external_agents SET presence_status = {p} WHERE id = {p}", (stored, agent["id"]))
+    conn.commit()
+    conn.close()
+    resolved = resolve_agent_presence(agent.get("last_seen_at"), stored)
+    return {
+        "name": agent["name"],
+        "presence_setting": status,
+        **resolved,
+    }
+
+
 def get_external_agents_status() -> list[dict]:
     conn = get_db()
     rows = _fetchall(
         conn,
-        """SELECT e.id, e.name, e.created_at, e.last_seen_at, e.is_active, a.slug AS overview_slug
+        """SELECT e.id, e.name, e.created_at, e.last_seen_at, e.presence_status, e.is_active, a.slug AS overview_slug
            FROM external_agents e
            LEFT JOIN articles a ON a.id = e.overview_article_id
            ORDER BY e.name ASC""",
@@ -505,20 +561,20 @@ def get_external_agents_status() -> list[dict]:
         if not row.get("is_active"):
             continue
         last_seen = row.get("last_seen_at")
-        seen_dt = _parse_iso(last_seen)
-        online = bool(seen_dt and (now_dt - seen_dt).total_seconds() <= threshold)
         overview_slug = row.get("overview_slug")
+        presence = resolve_agent_presence(last_seen, row.get("presence_status"), threshold, now_dt)
         agents.append({
             "id": row["id"],
             "name": row["name"],
             "created_at": row["created_at"],
             "last_seen_at": last_seen,
-            "online": online,
             "overview_slug": overview_slug,
             "overview_url": f"/wiki/{overview_slug}" if overview_slug else None,
+            **presence,
         })
 
-    agents.sort(key=lambda a: (not a["online"], a["last_seen_at"] or "", a["name"]))
+    order = {"active": 0, "afk": 1, "offline": 2}
+    agents.sort(key=lambda a: (order.get(a["presence"], 9), a["last_seen_at"] or "", a["name"]))
     return agents
 
 
@@ -527,7 +583,8 @@ def get_external_agent_details(api_key: str) -> dict | None:
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     row = _fetchone(
         conn,
-        """SELECT e.id, e.name, e.created_at, e.is_active, e.overview_article_id, a.slug AS overview_slug
+        """SELECT e.id, e.name, e.created_at, e.is_active, e.last_seen_at, e.presence_status,
+                  e.overview_article_id, a.slug AS overview_slug
            FROM external_agents e
            LEFT JOIN articles a ON a.id = e.overview_article_id
            WHERE e.api_key_hash = """ + _param_style(),

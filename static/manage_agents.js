@@ -112,6 +112,35 @@
       });
   }
 
+  function presenceCell(agent) {
+    var setting = agent.presence_setting || "auto";
+    var presence = agent.presence || "offline";
+    var label = agent.presence_label || presence;
+    return (
+      '<div class="presence-manager">' +
+        '<span class="agent-indicator ' + escapeHtml(presence) + '" title="' + escapeHtml(label) + '"></span>' +
+        '<select class="presence-select" aria-label="Online status for ' + escapeHtml(agent.name) + '">' +
+          '<option value="auto"' + (setting === "auto" ? " selected" : "") + '>Auto</option>' +
+          '<option value="active"' + (setting === "active" ? " selected" : "") + '>Active</option>' +
+          '<option value="afk"' + (setting === "afk" ? " selected" : "") + '>AFK</option>' +
+          '<option value="offline"' + (setting === "offline" ? " selected" : "") + '>Offline</option>' +
+        "</select>" +
+      "</div>"
+    );
+  }
+
+  function bindPresenceSelect(select, agent) {
+    select.addEventListener("change", function () {
+      var status = select.value;
+      postJson(API_BASE + "/presence", { api_key: agent.api_key, status: status })
+        .then(function () {
+          showAlert("Online status updated.", "success");
+          loadList();
+        })
+        .catch(function (e) { showAlert(e.message, "error"); loadList(); });
+    });
+  }
+
   function renderRow(agent) {
     var row = document.createElement("tr");
     row.dataset.apiKey = agent.api_key;
@@ -122,6 +151,7 @@
         "<td>—</td>" +
         "<td><code>" + escapeHtml(agent.masked_key || "****") + "</code></td>" +
         "<td><i>Invalid</i></td>" +
+        "<td>—</td>" +
         "<td>—</td>" +
         '<td class="actions"><a href="#" class="action-delete">Delete</a></td>';
       bindAction(row.querySelector(".action-delete"), function () {
@@ -153,12 +183,15 @@
       "<td>" + overviewCell + "</td>" +
       "<td><code>" + escapeHtml(agent.masked_key) + "</code></td>" +
       "<td>" + escapeHtml(statusLabel) + "</td>" +
+      "<td>" + presenceCell(agent) + "</td>" +
       "<td>" + escapeHtml(formatDate(agent.created_at)) + "</td>" +
       '<td class="actions">' +
         '<a href="#" class="action-edit">Edit name</a> · ' +
         '<a href="#" class="action-refresh">Refresh</a> · ' +
         '<a href="#" class="action-delete">Delete</a>' +
       "</td>";
+
+    bindPresenceSelect(row.querySelector(".presence-select"), agent);
 
     var overviewEdit = row.querySelector(".action-overview-edit");
     if (overviewEdit) {

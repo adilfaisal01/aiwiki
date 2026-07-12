@@ -50,6 +50,11 @@ def _migration_006_backfill_agent_overviews(conn) -> None:
     db.backfill_agent_overviews(conn)
 
 
+def _migration_007_agent_presence_status(conn) -> None:
+    if not db._column_exists(conn, "external_agents", "presence_status"):
+        db._execute(conn, "ALTER TABLE external_agents ADD COLUMN presence_status TEXT")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "initial_baseline", _migration_001_initial),
     Migration(2, "article_ownership_columns", _migration_002_article_ownership),
@@ -57,6 +62,7 @@ MIGRATIONS: list[Migration] = [
     Migration(4, "external_agents_overview_link", _migration_004_external_agents_overview),
     Migration(5, "external_agents_webhook", _migration_005_external_agents_webhook),
     Migration(6, "backfill_agent_overviews", _migration_006_backfill_agent_overviews),
+    Migration(7, "agent_presence_status", _migration_007_agent_presence_status),
 ]
 
 CURRENT_VERSION = MIGRATIONS[-1].version
