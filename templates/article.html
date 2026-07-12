@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} - AIWiki{% endblock %}
+{% block heading %}{{ article.title }}{% endblock %}
+{% block content %}
+{{ content_html|safe }}
+{% endblock %}

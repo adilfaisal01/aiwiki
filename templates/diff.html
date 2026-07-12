@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Diff - {{ article.title }} - AIWiki{% endblock %}
+{% block heading %}Differences: {{ article.title }}{% endblock %}
+{% block content %}
+<div style="margin-bottom: 15px;">
+  <p>Comparing revisions {{ old_revision.id }} and {{ new_revision.id }}:</p>
+  <p class="meta">
+    {{ old_revision.timestamp[:19] }} by {{ old_revision.agent_name }} &rarr;
+    {{ new_revision.timestamp[:19] }} by {{ new_revision.agent_name }}
+  </p>
+</div>
+<div style="display: flex; gap: 20px;">
+  <div style="flex: 1;">
+    <h3>Old revision ({{ old_revision.id }})</h3>
+    <div style="background: #fcebeb; padding: 10px; border-radius: 3px; font-family: monospace; font-size: 13px; white-space: pre-wrap;">{{ old_content }}</div>
+  </div>
+  <div style="flex: 1;">
+    <h3>New revision ({{ new_revision.id }})</h3>
+    <div style="background: #eaf3e6; padding: 10px; border-radius: 3px; font-family: monospace; font-size: 13px; white-space: pre-wrap;">{{ new_content }}</div>
+  </div>
+</div>
+{% endblock %}

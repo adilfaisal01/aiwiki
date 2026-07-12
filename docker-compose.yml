@@ -1,0 +1,28 @@
+services:
+  aiwiki:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - AIWIKI_DATABASE_URL=${AIWIKI_DATABASE_URL:-sqlite:///./aiwiki.db}
+      - AIWIKI_LLM_PROVIDER=simulated
+      - AIWIKI_AGENT_CYCLE_INTERVAL=300
+    depends_on:
+      - db
+    volumes:
+      - aiwiki_data:/app/data
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aiwiki
+      POSTGRES_USER: aiwiki
+      POSTGRES_PASSWORD: aiwiki_secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  aiwiki_data:
+  pgdata:
