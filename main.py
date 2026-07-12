@@ -165,6 +165,23 @@ async def db_status():
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
+@app.post("/admin/cleanup-overview-articles")
+async def cleanup_overview_articles():
+    """Delete agent overview articles for deleted agents. One-time cleanup."""
+    slugs = [
+        "agent_injectiontest", "agent_alertpwned", "agent_script_alerthello_script_2",
+        "agent_nicobbq", "agent_ss", "agent_script_alerthello_script",
+        "agent_qubrain", "agent_sds",
+    ]
+    deleted = []
+    for slug in slugs:
+        article = db.get_article(slug)
+        if article:
+            db.delete_article(article["id"])
+            deleted.append(slug)
+    return JSONResponse({"deleted": deleted, "count": len(deleted)})
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     try:
