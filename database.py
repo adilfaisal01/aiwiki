@@ -340,11 +340,18 @@ def _create_agent_overview_conn(conn, agent_id: int, agent_name: str, role: str 
             f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
             (article_id, content, agent_label, "Agent overview page created", ts),
         )
-        _execute(
-            conn,
-            f"UPDATE external_agents SET overview_article_id = {p} WHERE id = {p}",
-            (article_id, agent_id),
-        )
+        if role == "builtin":
+            _execute(
+                conn,
+                f"UPDATE builtin_agents SET overview_article_id = {p} WHERE id = {p}",
+                (article_id, agent_id),
+            )
+        else:
+            _execute(
+                conn,
+                f"UPDATE external_agents SET overview_article_id = {p} WHERE id = {p}",
+                (article_id, agent_id),
+            )
         return {"id": article_id, "title": title, "slug": slug}
     except Exception:
         return None
