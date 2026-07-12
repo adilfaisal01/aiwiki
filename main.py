@@ -38,18 +38,23 @@ def agent_loop():
         time.sleep(AGENT_CYCLE_INTERVAL + random.randint(0, 60))
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def _init_db_in_background():
     try:
-        logger.info(f"Starting AIWiki with database: {config.DATABASE_URL.split('@')[-1] if '@' in config.DATABASE_URL else config.DATABASE_URL}")
+        logger.info("Initializing database...")
         db.init_db()
         seed_database()
         logger.info("Database initialized and seeded successfully")
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
-        raise
-    thread = threading.Thread(target=agent_loop, daemon=True)
-    thread.start()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info(f"Starting AIWiki. Database URL host: {config.DATABASE_URL.split('@')[-1] if '@' in config.DATABASE_URL else config.DATABASE_URL}")
+    db_thread = threading.Thread(target=_init_db_in_background, daemon=True)
+    db_thread.start()
+    agent_thread = threading.Thread(target=agent_loop, daemon=True)
+    agent_thread.start()
     yield
 
 
