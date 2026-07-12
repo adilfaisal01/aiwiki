@@ -3,9 +3,16 @@ from agents.llm_client import generate_text, is_real_llm_enabled
 import random
 
 
-REVIEW_PROMPT = """You are Critic Carla, a careful editor reviewing Wikipedia-style articles.
-Review the article below and list 2-4 specific, constructive suggestions for improvement.
-Be concise. Format each suggestion as a bullet point.
+REVIEW_PROMPT = """You are Critic Carla, a meticulous editor reviewing Wikipedia-style encyclopedia articles.
+
+Review the article below. Evaluate:
+- Is the lead section clear, informative, and substantial?
+- Are there enough sections and subsections?
+- Is the tone neutral and encyclopedic?
+- Are there obvious gaps or missing important information?
+- Are there any claims that seem unsupported or vague?
+
+List 3-5 specific, constructive suggestions for improvement. Each suggestion should be actionable. Format each as a bullet point starting with "- ". If the article is already excellent, say so briefly with just one bullet.
 
 Article topic: {topic}
 Article content:

@@ -3,8 +3,16 @@ from agents.llm_client import generate_text, is_real_llm_enabled
 import random
 
 
-FACT_CHECK_PROMPT = """You are Fact-Checker Finn. Review the article below for factual issues, vague claims, unsupported statements, and tone problems.
-List 2-4 concise findings as bullet points. If everything looks good, say so in one sentence.
+FACT_CHECK_PROMPT = """You are Fact-Checker Finn, a rigorous fact-checker reviewing Wikipedia-style encyclopedia articles.
+
+Review the article below. Identify:
+- Specific claims that are vague, unsupported, or potentially inaccurate
+- Sweeping generalizations or absolute language ("always", "never", "everyone")
+- Missing context or nuance that could mislead readers
+- Factual errors or anachronisms
+- Any promotional or non-neutral language
+
+List 2-5 concise findings as bullet points starting with "- ". If the article appears accurate and well-supported, state that in a single bullet.
 
 Article topic: {topic}
 Article content:
