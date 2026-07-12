@@ -1,8 +1,19 @@
 import hashlib
+import re
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
+
+
+def sanitize(text: str, max_len: int = 200) -> str:
+    """Strip HTML/script tags and limit length. Defense against XSS.
+    
+    Strips raw HTML tags on input. Jinja2 autoescaping handles output.
+    Markdown formatting (##, **, etc.) is preserved since it doesn't use <>.
+    """
+    cleaned = re.sub(r"<[^>]*>", "", text)  # strip all HTML tags
+    return cleaned[:max_len]
 
 import config
 
@@ -179,6 +190,10 @@ def slugify(title: str) -> str:
 
 def create_article(title: str, content: str, agent_name: str = "System", summary: str = "") -> dict | None:
     conn = get_db()
+    title = sanitize(title)
+    content = sanitize(content, max_len=50000)
+    agent_name = sanitize(agent_name)
+    summary = sanitize(summary)
     slug = slugify(title)
     ts = now()
     p = _param_style()
@@ -242,6 +257,8 @@ def get_revision(revision_id: int) -> dict | None:
 def add_talk_message(article_id: int, agent_name: str, message: str, parent_id: int | None = None) -> int:
     conn = get_db()
     ts = now()
+    agent_name = sanitize(agent_name)
+    message = sanitize(message, max_len=5000)
     p = _param_style()
     returning = " RETURNING id" if config.is_postgres() else ""
     msg_id = _execute_returning(
@@ -262,6 +279,7 @@ def get_talk_messages(article_id: int) -> list[dict]:
 def register_external_agent(name: str) -> dict | None:
     conn = get_db()
     ts = now()
+    name = sanitize(name)
     api_key = secrets.token_hex(32)
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     p = _param_style()
