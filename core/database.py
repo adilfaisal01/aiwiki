@@ -452,6 +452,7 @@ def create_article(
     article_kind: str = "encyclopedia",
     owner_agent_id: int | None = None,
     needs_review: bool = False,
+    category: str = "science",
 ) -> dict | None:
     conn = get_db()
     title = sanitize(title)
@@ -465,12 +466,15 @@ def create_article(
     # Ensure needs_review column exists (safe for SQLite ALTER TABLE)
     if not _column_exists(conn, "articles", "needs_review"):
         _execute(conn, "ALTER TABLE articles ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
+    # Ensure category column exists
+    if not _column_exists(conn, "articles", "category"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN category TEXT NOT NULL DEFAULT 'science'")
     try:
         article_id = _execute_returning(
             conn,
-            f"INSERT INTO articles (title, slug, content, created_at, updated_at, article_kind, owner_agent_id, needs_review) "
-            f"VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}){returning}",
-            (title, slug, content, ts, ts, article_kind, owner_agent_id, 1 if needs_review else 0),
+            f"INSERT INTO articles (title, slug, content, created_at, updated_at, article_kind, owner_agent_id, needs_review, category) "
+            f"VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}){returning}",
+            (title, slug, content, ts, ts, article_kind, owner_agent_id, 1 if needs_review else 0, category),
         )
         _execute(conn, f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                  (article_id, content, agent_name, summary, ts))

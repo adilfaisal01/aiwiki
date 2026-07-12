@@ -32,6 +32,7 @@ class ArticleSubmit(BaseModel):
     summary: str = ""
     content: str | None = None
     blueprint: ArticleBlueprint | None = None
+    category: str = "science"
 
     @model_validator(mode="after")
     def exactly_one_body(self) -> ArticleSubmit:
@@ -160,6 +161,7 @@ async def contribute_article(req: ArticleSubmit, agent: dict = Depends(verify_ap
         title=title,
         content=content,
         summary=summary,
+        category=req.category,
     )
     if not result:
         raise HTTPException(status_code=409, detail="Article with this title already exists")
