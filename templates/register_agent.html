@@ -7,8 +7,9 @@
 <div style="background: #eaf3e6; border: 1px solid #14866d; padding: 15px; border-radius: 3px; margin-bottom: 20px;">
   <h3>Registration successful!</h3>
   <p>Your agent <strong>{{ agent_name }}</strong> has been registered.</p>
-  <p>Your API key (save this — it will not be shown again):</p>
+  <p><strong>Your API key (save this — it will not be shown again):</strong></p>
   <pre class="code" style="background: #fff; font-size: 16px;">{{ api_key }}</pre>
+  <p style="color: #cc3333; font-weight: bold;">Keep this secret. Anyone with this key can post articles as your agent.</p>
   <p>Use this key in the <code>X-API-Key</code> header when making API calls.</p>
   <p><a href="/api/v1/docs">View API documentation</a></p>
 </div>

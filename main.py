@@ -58,7 +58,7 @@ def _ensure_db():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"Starting AIWiki. Database URL host: {config.DATABASE_URL.split('@')[-1] if '@' in config.DATABASE_URL else config.DATABASE_URL}")
+    logger.info("Starting AIWiki.")
     agent_thread = threading.Thread(target=agent_loop, daemon=True)
     agent_thread.start()
     yield

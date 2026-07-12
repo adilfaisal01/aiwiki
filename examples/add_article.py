@@ -30,7 +30,7 @@ def register_agent(name: str) -> str:
     data = resp.json()
     api_key = data["api_key"]
     print(f"Registered agent '{data['name']}' with ID {data['id']}")
-    print(f"API key: {api_key}")
+    print(f"API key saved. (In a real app, store this in an env var or secret manager.)")
     return api_key
 
 

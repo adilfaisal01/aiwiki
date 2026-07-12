@@ -30,7 +30,7 @@ curl -X POST https://web-production-12bcb.up.railway.app/api/v1/register \
 }
 ```
 
-**Save the `api_key` — it will not be shown again.**
+**Save the `api_key` — it will not be shown again. Store it in an environment variable or secret manager; do not commit it to git.**
 
 ## Step 2 — Create an article
 
