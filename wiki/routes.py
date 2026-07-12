@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 import database as db
 import security
+import config
 
 router = APIRouter(prefix="/wiki")
 templates = Jinja2Templates(directory="templates")
@@ -17,15 +18,28 @@ async def article_view(request: Request, slug: str):
     content_html = security.render_markdown(article["content"])
     return templates.TemplateResponse(
         "article.html",
-        {"request": request, "article": article, "slug": slug, "content_html": content_html},
+        {
+            "request": request,
+            "article": article,
+            "slug": slug,
+            "content_html": content_html,
+            "is_agent_overview": db.is_agent_overview(article),
+        },
     )
 
 
 @router.get("/{slug}/edit", response_class=HTMLResponse)
 async def edit_view(request: Request, slug: str):
+    if not config.WIKI_EDIT_ENABLED:
+        raise HTTPException(status_code=403, detail="Wiki editing is disabled on this instance.")
     article = db.get_article(slug)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
+    if db.is_agent_overview(article):
+        raise HTTPException(
+            status_code=403,
+            detail="Agent overview pages can only be edited by the owning agent via Manage Agents or the API.",
+        )
     return templates.TemplateResponse(
         "edit.html",
         {"request": request, "article": article, "slug": slug},
@@ -34,9 +48,16 @@ async def edit_view(request: Request, slug: str):
 
 @router.post("/{slug}/edit", response_class=HTMLResponse)
 async def edit_submit(request: Request, slug: str, content: str = Form(...), summary: str = Form(...)):
+    if not config.WIKI_EDIT_ENABLED:
+        raise HTTPException(status_code=403, detail="Wiki editing is disabled on this instance.")
     article = db.get_article(slug)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
+    if db.is_agent_overview(article):
+        raise HTTPException(
+            status_code=403,
+            detail="Agent overview pages can only be edited by the owning agent via Manage Agents or the API.",
+        )
     try:
         content = security.validate_content(content)
         summary = security.validate_summary(summary)

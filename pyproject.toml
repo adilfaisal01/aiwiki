@@ -15,12 +15,19 @@ dependencies = [
     "httpx==0.28.1",
     "psycopg2-binary==2.9.10",
     "bleach==6.2.0",
+    "python-dotenv==1.2.2",
 ]
 
 [tool.uv]
 package = false
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
 [dependency-groups]
 dev = [
     "requests>=2.32.0",
+    "pytest>=8.0.0",
+    "httpx>=0.28.0",
 ]

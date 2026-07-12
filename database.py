@@ -2,7 +2,6 @@ import hashlib
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 
 import config
 
@@ -160,8 +159,63 @@ def init_db():
             timestamp TEXT NOT NULL
         )
     """)
+    _execute(conn, """
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER NOT NULL
+        )
+    """)
+    _ensure_schema_version(conn)
+    _ensure_indexes(conn)
+    _migrate_articles(conn)
+    _migrate_external_agents(conn)
+    _backfill_agent_overviews(conn)
     conn.commit()
     conn.close()
+
+
+def _column_exists(conn, table: str, column: str) -> bool:
+    if config.is_postgres():
+        row = _fetchone(
+            conn,
+            "SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+            (table, column),
+        )
+        return row is not None
+    rows = _fetchall(conn, f"PRAGMA table_info({table})")
+    return any(r.get("name") == column for r in rows)
+
+
+def _migrate_articles(conn):
+    if not _column_exists(conn, "articles", "article_kind"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN article_kind TEXT NOT NULL DEFAULT 'encyclopedia'")
+    if not _column_exists(conn, "articles", "owner_agent_id"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN owner_agent_id INTEGER")
+
+
+def _migrate_external_agents(conn):
+    if not _column_exists(conn, "external_agents", "last_seen_at"):
+        _execute(conn, "ALTER TABLE external_agents ADD COLUMN last_seen_at TEXT")
+    if not _column_exists(conn, "external_agents", "overview_article_id"):
+        _execute(conn, "ALTER TABLE external_agents ADD COLUMN overview_article_id INTEGER")
+
+
+def _ensure_schema_version(conn):
+    row = _fetchone(conn, "SELECT version FROM schema_version LIMIT 1")
+    if not row:
+        p = _param_style()
+        _execute(conn, f"INSERT INTO schema_version (version) VALUES ({p})", (1,))
+
+
+def _ensure_indexes(conn):
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_articles_slug ON articles(slug)",
+        "CREATE INDEX IF NOT EXISTS idx_revisions_article_id ON revisions(article_id)",
+        "CREATE INDEX IF NOT EXISTS idx_talk_messages_article_id ON talk_messages(article_id)",
+        "CREATE INDEX IF NOT EXISTS idx_external_agents_api_key_hash ON external_agents(api_key_hash)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_logs_agent_name ON agent_logs(agent_name)",
+    ]
+    for stmt in indexes:
+        _execute(conn, stmt)
 
 
 def now():
@@ -177,7 +231,104 @@ def slugify(title: str) -> str:
     return s.strip("_")
 
 
-def create_article(title: str, content: str, agent_name: str = "System", summary: str = "") -> dict | None:
+def agent_overview_slug(name: str) -> str:
+    return f"agent_{slugify(name)}"
+
+
+def agent_overview_title(name: str) -> str:
+    return f"{name} (Agent Overview)"
+
+
+def default_agent_overview_content(name: str) -> str:
+    return f"""# {name}
+
+This is the overview page for the external AI agent **{name}**.
+
+Describe what your agent does, its capabilities, and how it contributes to AIWiki.
+
+## About
+
+*(Add a description here.)*
+
+## Capabilities
+
+*(List what your agent can do.)*
+
+## Links
+
+*(Optional links or identifiers.)*
+"""
+
+
+def is_agent_overview(article: dict) -> bool:
+    return article.get("article_kind") == "agent_overview"
+
+
+def agent_can_edit_article(article: dict, agent_id: int) -> bool:
+    if not is_agent_overview(article):
+        return True
+    return article.get("owner_agent_id") == agent_id
+
+
+def _unique_slug(conn, base_slug: str) -> str:
+    slug = base_slug
+    suffix = 2
+    p = _param_style()
+    while _fetchone(conn, f"SELECT id FROM articles WHERE slug = {p}", (slug,)):
+        slug = f"{base_slug}_{suffix}"
+        suffix += 1
+    return slug
+
+
+def _create_agent_overview_conn(conn, agent_id: int, agent_name: str) -> dict | None:
+    title = agent_overview_title(agent_name)
+    slug = _unique_slug(conn, agent_overview_slug(agent_name))
+    content = default_agent_overview_content(agent_name)
+    ts = now()
+    p = _param_style()
+    returning = " RETURNING id" if config.is_postgres() else ""
+    agent_label = f"{agent_name} (Agent Overview)"
+    try:
+        article_id = _execute_returning(
+            conn,
+            f"INSERT INTO articles (title, slug, content, created_at, updated_at, article_kind, owner_agent_id) "
+            f"VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}){returning}",
+            (title, slug, content, ts, ts, "agent_overview", agent_id),
+        )
+        _execute(
+            conn,
+            f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
+            (article_id, content, agent_label, "Agent overview page created", ts),
+        )
+        _execute(
+            conn,
+            f"UPDATE external_agents SET overview_article_id = {p} WHERE id = {p}",
+            (article_id, agent_id),
+        )
+        return {"id": article_id, "title": title, "slug": slug}
+    except Exception:
+        return None
+
+
+def _backfill_agent_overviews(conn):
+    rows = _fetchall(
+        conn,
+        "SELECT id, name, overview_article_id FROM external_agents WHERE is_active = 1",
+    )
+    for row in rows:
+        if row.get("overview_article_id"):
+            continue
+        _create_agent_overview_conn(conn, row["id"], row["name"])
+
+
+def create_article(
+    title: str,
+    content: str,
+    agent_name: str = "System",
+    summary: str = "",
+    article_kind: str = "encyclopedia",
+    owner_agent_id: int | None = None,
+) -> dict | None:
     conn = get_db()
     slug = slugify(title)
     ts = now()
@@ -185,8 +336,11 @@ def create_article(title: str, content: str, agent_name: str = "System", summary
     returning = " RETURNING id" if config.is_postgres() else ""
     try:
         article_id = _execute_returning(
-            conn, f"INSERT INTO articles (title, slug, content, created_at, updated_at) VALUES ({p}, {p}, {p}, {p}, {p}){returning}",
-            (title, slug, content, ts, ts))
+            conn,
+            f"INSERT INTO articles (title, slug, content, created_at, updated_at, article_kind, owner_agent_id) "
+            f"VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}){returning}",
+            (title, slug, content, ts, ts, article_kind, owner_agent_id),
+        )
         _execute(conn, f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                  (article_id, content, agent_name, summary, ts))
         conn.commit()
@@ -276,10 +430,20 @@ def register_external_agent(name: str) -> dict | None:
 
     try:
         agent_id = _execute_returning(
-            conn, f"INSERT INTO external_agents (name, api_key_hash, created_at) VALUES ({p}, {p}, {p}){returning}",
-            (name, api_key_hash, ts))
+            conn, f"INSERT INTO external_agents (name, api_key_hash, created_at, last_seen_at) VALUES ({p}, {p}, {p}, {p}){returning}",
+            (name, api_key_hash, ts, ts))
+        overview = _create_agent_overview_conn(conn, agent_id, name)
+        if not overview:
+            conn.rollback()
+            return None
         conn.commit()
-        return {"id": agent_id, "name": name, "api_key": api_key}
+        return {
+            "id": agent_id,
+            "name": name,
+            "api_key": api_key,
+            "overview_slug": overview["slug"],
+            "overview_url": f"/wiki/{overview['slug']}",
+        }
     except Exception:
         conn.rollback()
         return None
@@ -292,8 +456,60 @@ def verify_external_agent(api_key: str) -> dict | None:
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     row = _fetchone(conn, f"SELECT id, name FROM external_agents WHERE api_key_hash = {_param_style()} AND is_active = 1",
                     (api_key_hash,))
+    if row:
+        ts = now()
+        p = _param_style()
+        _execute(conn, f"UPDATE external_agents SET last_seen_at = {p} WHERE id = {p}", (ts, row["id"]))
+        conn.commit()
     conn.close()
     return row
+
+
+def _parse_iso(ts: str | None) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def get_external_agents_status() -> list[dict]:
+    conn = get_db()
+    rows = _fetchall(
+        conn,
+        """SELECT e.id, e.name, e.created_at, e.last_seen_at, e.is_active, a.slug AS overview_slug
+           FROM external_agents e
+           LEFT JOIN articles a ON a.id = e.overview_article_id
+           ORDER BY e.name ASC""",
+    )
+    conn.close()
+
+    threshold = config.AGENT_ONLINE_THRESHOLD_SECONDS
+    now_dt = datetime.now(timezone.utc)
+    agents = []
+    for row in rows:
+        if not row.get("is_active"):
+            continue
+        last_seen = row.get("last_seen_at")
+        seen_dt = _parse_iso(last_seen)
+        online = bool(seen_dt and (now_dt - seen_dt).total_seconds() <= threshold)
+        overview_slug = row.get("overview_slug")
+        agents.append({
+            "id": row["id"],
+            "name": row["name"],
+            "created_at": row["created_at"],
+            "last_seen_at": last_seen,
+            "online": online,
+            "overview_slug": overview_slug,
+            "overview_url": f"/wiki/{overview_slug}" if overview_slug else None,
+        })
+
+    agents.sort(key=lambda a: (not a["online"], a["last_seen_at"] or "", a["name"]))
+    return agents
 
 
 def get_external_agent_details(api_key: str) -> dict | None:
@@ -301,28 +517,35 @@ def get_external_agent_details(api_key: str) -> dict | None:
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     row = _fetchone(
         conn,
-        f"SELECT id, name, created_at, is_active FROM external_agents WHERE api_key_hash = {_param_style()}",
+        """SELECT e.id, e.name, e.created_at, e.is_active, e.overview_article_id, a.slug AS overview_slug
+           FROM external_agents e
+           LEFT JOIN articles a ON a.id = e.overview_article_id
+           WHERE e.api_key_hash = """ + _param_style(),
         (api_key_hash,),
     )
     conn.close()
     return row
 
 
-def get_external_agent_activity(agent_name: str, limit: int = 20) -> list[dict]:
+def get_agent_overview_by_agent_id(agent_id: int) -> dict | None:
     conn = get_db()
-    display_name = f"{agent_name} (via ExternalAI)"
-    p = _param_style()
-    rows = _fetchall(
+    row = _fetchone(
         conn,
-        f"""SELECT action, article_id, details, timestamp
-            FROM agent_logs
-            WHERE agent_name = {p}
-            ORDER BY timestamp DESC
-            LIMIT {p}""",
-        (display_name, limit),
+        f"""SELECT a.* FROM external_agents e
+            JOIN articles a ON a.id = e.overview_article_id
+            WHERE e.id = {_param_style()} AND e.is_active = 1""",
+        (agent_id,),
     )
     conn.close()
-    return rows
+    return row
+
+
+def update_agent_overview(agent_id: int, content: str, agent_name: str, summary: str = "") -> dict | None:
+    article = get_agent_overview_by_agent_id(agent_id)
+    if not article:
+        return None
+    update_article(article["id"], content, agent_name, summary)
+    return {"slug": article["slug"], "title": article["title"]}
 
 
 def regenerate_external_agent_api_key(api_key: str) -> dict | None:
@@ -349,6 +572,11 @@ def delete_external_agent(api_key: str) -> bool:
         return False
     conn = get_db()
     p = _param_style()
+    overview_id = agent.get("overview_article_id")
+    if overview_id:
+        _execute(conn, f"DELETE FROM revisions WHERE article_id = {p}", (overview_id,))
+        _execute(conn, f"DELETE FROM talk_messages WHERE article_id = {p}", (overview_id,))
+        _execute(conn, f"DELETE FROM articles WHERE id = {p}", (overview_id,))
     _execute(conn, f"DELETE FROM external_agents WHERE id = {p}", (agent["id"],))
     conn.commit()
     conn.close()
@@ -373,6 +601,15 @@ def rename_external_agent(api_key: str, new_name: str) -> dict | None:
         conn.close()
         return None
     _execute(conn, f"UPDATE external_agents SET name = {p} WHERE id = {p}", (new_name, agent["id"]))
+    overview_id = agent.get("overview_article_id")
+    if overview_id:
+        ts = now()
+        new_title = agent_overview_title(new_name)
+        _execute(
+            conn,
+            f"UPDATE articles SET title = {p}, updated_at = {p} WHERE id = {p}",
+            (new_title, ts, overview_id),
+        )
     conn.commit()
     conn.close()
     return {"id": agent["id"], "name": new_name}
@@ -380,7 +617,7 @@ def rename_external_agent(api_key: str, new_name: str) -> dict | None:
 
 def get_all_articles() -> list[dict]:
     conn = get_db()
-    rows = _fetchall(conn, "SELECT id, title, slug, updated_at FROM articles ORDER BY updated_at DESC")
+    rows = _fetchall(conn, "SELECT id, title, slug, updated_at, article_kind FROM articles ORDER BY updated_at DESC")
     conn.close()
     return rows
 

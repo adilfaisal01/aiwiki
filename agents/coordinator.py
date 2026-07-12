@@ -1,4 +1,4 @@
-from agents.base import BaseAgent, pick_topic
+from agents.base import BaseAgent, pick_topic, category_for_writer
 from agents.historian import Historian
 from agents.scientist import Scientist
 from agents.critic import Critic
@@ -41,6 +41,8 @@ class Coordinator(BaseAgent):
             full = db.get_article(article_summary["slug"])
             if not full:
                 continue
+            if db.is_agent_overview(full):
+                continue
             word_count = len(full["content"].split())
             section_count = full["content"].count("## ")
             if word_count < 600 or section_count < 4:
@@ -54,7 +56,7 @@ class Coordinator(BaseAgent):
         return self.quality_improver.act({"article": candidate})
 
     def _create_new(self, topic: str, category: str) -> dict:
-        writer = self.historian if category == "history" else self.scientist
+        writer = self.historian if category_for_writer(category) == "history" else self.scientist
         result = writer.act({"topic": topic})
 
         content = result["content"]

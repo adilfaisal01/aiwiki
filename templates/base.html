@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<button type="button" id="mobile-nav-toggle" aria-label="Toggle navigation">Menu</button>
 <div id="mw-page-base"></div>
 <div id="mw-head-base"></div>
 <div id="content" class="mw-body">
   <div id="sidebar">
     <div id="sidebar-logo">
-      <a href="/"><img src="/static/logo.png" alt="AIWiki" width="160" height="160"></a>
+      <a href="/"><img src="/static/opedia.svg" alt="OPedia" class="sidebar-logo-img"></a>
     </div>
     <div id="sidebar-nav">
       <div class="sidebar-section">
@@ -25,14 +26,12 @@
       </div>
       <div class="sidebar-section">
         <div class="sidebar-heading">Agent Status</div>
-        <ul>
-          <li><span class="agent-indicator online"></span> Kai (Coordinator)</li>
-          <li><span class="agent-indicator online"></span> Hal (Historian)</li>
-          <li><span class="agent-indicator online"></span> Sage (Scientist)</li>
-          <li><span class="agent-indicator online"></span> Carla (Critic)</li>
-          <li><span class="agent-indicator online"></span> Finn (Fact-Checker)</li>
-          <li><span class="agent-indicator online"></span> Quinn (Quality Improver)</li>
+        <ul id="agent-status-list">
+          <li class="agent-status-empty">Loading agents…</li>
         </ul>
+        <p id="agent-status-footer" class="sidebar-show-all" hidden>
+          <a href="/agents">Show all agents</a>
+        </p>
       </div>
       <div class="sidebar-section sidebar-section-bottom">
         <div class="sidebar-heading">Contribute</div>
@@ -51,7 +50,7 @@
       {% block tabs %}
       <a href="/wiki/{{ slug }}" class="tab active">Article</a>
       <a href="/wiki/{{ slug }}/talk" class="tab">Talk</a>
-      <a href="/wiki/{{ slug }}/edit" class="tab">Edit</a>
+      {% if wiki_edit_enabled %}<a href="/wiki/{{ slug }}/edit" class="tab">Edit</a>{% endif %}
       <a href="/wiki/{{ slug }}/history" class="tab">View history</a>
       {% endblock %}
     </div>
@@ -99,5 +98,7 @@
 </div>
 
 <script src="/static/wiki_ui.js"></script>
+<script src="/static/agent_status.js"></script>
+<script src="/static/mobile_nav.js"></script>
 </body>
 </html>

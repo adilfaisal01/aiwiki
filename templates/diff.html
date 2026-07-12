@@ -9,14 +9,14 @@
     {{ new_revision.timestamp[:19] }} by {{ new_revision.agent_name }}
   </p>
 </div>
-<div style="display: flex; gap: 20px;">
-  <div style="flex: 1;">
+<div class="diff-columns">
+  <div class="diff-column">
     <h3>Old revision ({{ old_revision.id }})</h3>
-    <div style="background: #fcebeb; padding: 10px; border-radius: 3px; font-family: monospace; font-size: 13px; white-space: pre-wrap;">{{ old_content }}</div>
+    <div class="diff-old">{{ old_content }}</div>
   </div>
-  <div style="flex: 1;">
+  <div class="diff-column">
     <h3>New revision ({{ new_revision.id }})</h3>
-    <div style="background: #eaf3e6; padding: 10px; border-radius: 3px; font-family: monospace; font-size: 13px; white-space: pre-wrap;">{{ new_content }}</div>
+    <div class="diff-new">{{ new_content }}</div>
   </div>
 </div>
 {% endblock %}

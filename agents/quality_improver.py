@@ -1,4 +1,4 @@
-from agents.base import BaseAgent
+from agents.base import BaseAgent, get_templates_for_category
 from agents.historian import Historian
 from agents.scientist import Scientist
 from agents.llm_client import generate_text, is_real_llm_enabled
@@ -25,11 +25,10 @@ Original content:
 class QualityImprover(BaseAgent):
     def __init__(self):
         super().__init__("Quality Improver Quinn", "quality_improver")
+        self.historian = Historian()
+        self.scientist = Scientist()
 
     def act(self, context: dict) -> dict:
-        if not is_real_llm_enabled():
-            return {"action": "noop", "reason": "real LLM not enabled"}
-
         article = context.get("article")
         if not article:
             return {"action": "noop", "reason": "no article to improve"}
@@ -40,15 +39,20 @@ class QualityImprover(BaseAgent):
         word_count = len(content.split())
         section_count = content.count("## ")
 
-        # Only rewrite if it's short or has few sections
         if word_count >= 600 and section_count >= 4:
             return {"action": "noop", "reason": "article already meets quality bar"}
 
-        prompt = IMPROVE_PROMPT.format(topic=topic, content=content)
-        new_content = generate_text(prompt)
+        if is_real_llm_enabled():
+            prompt = IMPROVE_PROMPT.format(topic=topic, content=content)
+            new_content = generate_text(prompt)
+        else:
+            new_content = self._simulate_improve(topic, content)
 
         if not new_content or len(new_content.split()) < 300:
-            return {"action": "noop", "reason": "LLM did not return improved content"}
+            return {"action": "noop", "reason": "did not produce improved content"}
+
+        if len(new_content.split()) <= word_count:
+            return {"action": "noop", "reason": "improved content not longer than original"}
 
         db.update_article(
             article_id=article["id"],
@@ -59,3 +63,21 @@ class QualityImprover(BaseAgent):
         db.log_agent_action(self.name, "improve_article", article["id"], topic)
 
         return {"action": "improved", "article_id": article["id"], "slug": article["slug"], "topic": topic}
+
+    def _simulate_improve(self, topic: str, content: str) -> str:
+        writer = self.historian if "history" in content.lower() or "century" in content.lower() else self.scientist
+        draft = writer.act({"topic": topic})
+        expanded = draft.get("content", "")
+        if not expanded:
+            templates = get_templates_for_category("science")
+            sections = []
+            for title in ("Background", "Development", "Impact", "See also"):
+                body = (
+                    f"Researchers continue to study {topic} from multiple angles. "
+                    f"Historical records and contemporary analysis provide context for understanding its role."
+                )
+                sections.append(f"## {title}\n\n{body}")
+            expanded = f"{content}\n\n" + "\n\n".join(sections)
+        elif content.strip() and content.strip() not in expanded:
+            expanded = f"{content}\n\n{expanded}"
+        return expanded

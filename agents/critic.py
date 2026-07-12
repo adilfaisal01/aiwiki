@@ -35,11 +35,22 @@ class Critic(BaseAgent):
         if is_real_llm_enabled():
             review = generate_text(REVIEW_PROMPT.format(topic=topic, content=content))
             if review:
+                suggestions = [
+                    line.strip("- ").strip()
+                    for line in review.splitlines()
+                    if line.strip().startswith("-")
+                ]
+                if not suggestions:
+                    suggestions = [review.strip()]
+                positive_markers = ("excellent", "well-structured", "no major issues", "already strong")
+                needs_revision = len(suggestions) > 1
+                if len(suggestions) == 1 and any(m in suggestions[0].lower() for m in positive_markers):
+                    needs_revision = False
                 return {
                     "action": "review",
                     "message": f"**Review by {self.name}:**\n\n{review}",
-                    "suggestions": [line.strip("- ").strip() for line in review.splitlines() if line.strip().startswith("-")],
-                    "needs_revision": True,
+                    "suggestions": suggestions,
+                    "needs_revision": needs_revision,
                 }
 
         # Fallback simulated review

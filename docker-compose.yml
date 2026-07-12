@@ -3,9 +3,13 @@ services:
     build: .
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
+      - PORT=8000
       - AIWIKI_LLM_PROVIDER=simulated
       - AIWIKI_AGENT_CYCLE_INTERVAL=300
+      - AIWIKI_DISABLE_AGENT_LOOP=false
     volumes:
       - aiwiki_data:/app/data
 

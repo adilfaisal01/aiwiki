@@ -1,10 +1,10 @@
+import logging
 import threading
 import time
 import random
-import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,12 +17,18 @@ from external_api.routes import router as api_router
 from agents.coordinator import Coordinator
 from seed_data import seed_database
 import security
+from rate_limit import registration_rate_limiter
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 logger = logging.getLogger("aiwiki")
 
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["wiki_edit_enabled"] = config.WIKI_EDIT_ENABLED
+
 coordinator = Coordinator()
 
 
@@ -31,11 +37,13 @@ def agent_loop():
         try:
             result = coordinator.act({})
             if result.get("action") == "created":
-                logger.info(f"[Agent] {coordinator.name} created article: {result.get('topic')}")
+                logger.info("[Agent] %s created article: %s", coordinator.name, result.get("topic"))
             elif result.get("action") == "reviewed":
-                logger.info(f"[Agent] {coordinator.name} reviewed: {result.get('slug')}")
+                logger.info("[Agent] %s reviewed: %s", coordinator.name, result.get("slug"))
+            elif result.get("action") == "improved":
+                logger.info("[Agent] %s improved: %s", coordinator.name, result.get("slug"))
         except Exception as e:
-            logger.error(f"[Agent] Error in agent loop: {e}")
+            logger.error("[Agent] Error in agent loop: %s", e)
         time.sleep(AGENT_CYCLE_INTERVAL + random.randint(0, 60))
 
 
@@ -57,11 +65,22 @@ def _ensure_db():
         logger.info("Database initialized and seeded successfully")
 
 
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting AIWiki.")
-    agent_thread = threading.Thread(target=agent_loop, daemon=True)
-    agent_thread.start()
+    _ensure_db()
+    if not config.DISABLE_AGENT_LOOP:
+        agent_thread = threading.Thread(target=agent_loop, daemon=True)
+        agent_thread.start()
     yield
 
 
@@ -95,9 +114,21 @@ async def db_init_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if request.url.path.startswith("/api/v1") or request.url.path.startswith("/manage-agents"):
+        headers = dict(exc.headers or {})
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=headers)
+    if exc.status_code == 404:
+        return HTMLResponse(content="<h1>Not Found</h1><p>The requested page was not found.</p>", status_code=404)
+    return HTMLResponse(content=f"<h1>Error</h1><p>{exc.detail}</p>", status_code=exc.status_code)
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception")
+    if request.url.path.startswith("/api/v1") or request.url.path.startswith("/manage-agents"):
+        return JSONResponse({"detail": "Internal server error"}, status_code=500)
     return HTMLResponse(
         content="<h1>Internal Server Error</h1><p>An unexpected error occurred.</p>",
         status_code=500,
@@ -111,7 +142,18 @@ app.include_router(api_router)
 
 @app.get("/health")
 async def health():
-    return JSONResponse({"status": "ok"})
+    try:
+        _ensure_db()
+        articles = db.get_all_articles()
+        return JSONResponse({
+            "status": "ok",
+            "database": "ok",
+            "articles": len(articles),
+            "llm_provider": config.LLM_PROVIDER,
+        })
+    except Exception as e:
+        logger.error("Health check failed: %s", e)
+        return JSONResponse({"status": "degraded", "database": "error"}, status_code=503)
 
 
 @app.get("/db-status")
@@ -120,7 +162,7 @@ async def db_status():
         articles = db.get_all_articles()
         return JSONResponse({"status": "ok", "articles": len(articles)})
     except Exception as e:
-        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
+        return JSONResponse({"status": "error", "detail": "Database unavailable"}, status_code=500)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -128,7 +170,7 @@ async def index(request: Request):
     try:
         articles = db.get_all_articles()
         recent_changes = db.get_recent_changes(10)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to load index data")
         return HTMLResponse(
             content="<h1>Database Error</h1><p>Could not load articles. The database may still be initializing or the connection failed.</p>",
@@ -142,7 +184,11 @@ async def index(request: Request):
 
 @app.get("/recent-changes", response_class=HTMLResponse)
 async def recent_changes(request: Request):
-    changes = db.get_recent_changes(50)
+    try:
+        changes = db.get_recent_changes(50)
+    except Exception:
+        logger.exception("Failed to load recent changes")
+        return HTMLResponse(content="<h1>Database Error</h1><p>Could not load recent changes.</p>", status_code=500)
     return templates.TemplateResponse(
         "recent_changes.html",
         {"request": request, "changes": changes},
@@ -151,11 +197,16 @@ async def recent_changes(request: Request):
 
 @app.get("/random")
 async def random_article():
-    articles = db.get_all_articles()
+    articles = [a for a in db.get_all_articles() if a.get("article_kind", "encyclopedia") != "agent_overview"]
     if not articles:
         return RedirectResponse(url="/")
     article = random.choice(articles)
     return RedirectResponse(url=f"/wiki/{article['slug']}")
+
+
+@app.get("/agents", response_class=HTMLResponse)
+async def agents_page(request: Request):
+    return templates.TemplateResponse("agents.html", {"request": request})
 
 
 @app.get("/register-agent", response_class=HTMLResponse)
@@ -165,6 +216,14 @@ async def register_agent_page(request: Request):
 
 @app.post("/register-agent", response_class=HTMLResponse)
 async def register_agent_submit(request: Request):
+    ip = _client_ip(request)
+    if not registration_rate_limiter.allow(f"register:{ip}"):
+        retry = registration_rate_limiter.retry_after(f"register:{ip}")
+        return templates.TemplateResponse(
+            "register_agent.html",
+            {"request": request, "error": f"Too many registration attempts. Try again in {retry} seconds."},
+            status_code=429,
+        )
     form = await request.form()
     name = form.get("name", "").strip()
     try:
@@ -182,7 +241,13 @@ async def register_agent_submit(request: Request):
         )
     return templates.TemplateResponse(
         "register_agent.html",
-        {"request": request, "api_key": result["api_key"], "agent_name": result["name"]},
+        {
+            "request": request,
+            "api_key": result["api_key"],
+            "agent_name": result["name"],
+            "overview_slug": result.get("overview_slug"),
+            "overview_url": result.get("overview_url"),
+        },
     )
 
 
@@ -223,6 +288,8 @@ def _agent_list_response(keys: list[str]):
             "created_at": agent["created_at"],
             "is_active": bool(agent["is_active"]),
             "masked_key": _mask_api_key(api_key),
+            "overview_slug": agent.get("overview_slug"),
+            "overview_url": f"/wiki/{agent['overview_slug']}" if agent.get("overview_slug") else None,
         })
     return JSONResponse({"agents": agents})
 
@@ -296,7 +363,53 @@ async def manage_agents_verify(request: Request):
         "created_at": agent["created_at"],
         "is_active": bool(agent["is_active"]),
         "masked_key": _mask_api_key(api_key),
+        "overview_slug": agent.get("overview_slug"),
+        "overview_url": f"/wiki/{agent['overview_slug']}" if agent.get("overview_slug") else None,
     })
+
+
+@app.post("/manage-agents/overview/get")
+async def manage_agents_overview_get(request: Request):
+    body = await request.json()
+    api_key = body.get("api_key", "").strip()
+    if not api_key:
+        return JSONResponse({"error": "API key is required"}, status_code=400)
+    agent = db.get_external_agent_details(api_key)
+    if not agent:
+        return JSONResponse({"error": "Invalid API key"}, status_code=400)
+    article = db.get_agent_overview_by_agent_id(agent["id"])
+    if not article:
+        return JSONResponse({"error": "Overview page not found"}, status_code=404)
+    return JSONResponse({
+        "name": agent["name"],
+        "slug": article["slug"],
+        "title": article["title"],
+        "content": article["content"],
+        "url": f"/wiki/{article['slug']}",
+    })
+
+
+@app.post("/manage-agents/overview/update")
+async def manage_agents_overview_update(request: Request):
+    body = await request.json()
+    api_key = body.get("api_key", "").strip()
+    content = body.get("content", "")
+    summary = body.get("summary", "Updated agent overview")
+    if not api_key:
+        return JSONResponse({"error": "API key is required"}, status_code=400)
+    agent = db.get_external_agent_details(api_key)
+    if not agent:
+        return JSONResponse({"error": "Invalid API key"}, status_code=400)
+    try:
+        content = security.validate_content(content)
+        summary = security.validate_summary(summary)
+    except security.ValidationError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    agent_name = f"{agent['name']} (Owner)"
+    result = db.update_agent_overview(agent["id"], content, agent_name, summary)
+    if not result:
+        return JSONResponse({"error": "Overview page not found"}, status_code=404)
+    return JSONResponse({"status": "ok", "slug": result["slug"], "url": f"/wiki/{result['slug']}"})
 
 
 if __name__ == "__main__":

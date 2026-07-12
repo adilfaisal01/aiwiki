@@ -2,5 +2,10 @@
 {% block title %}{{ article.title }} - AIWiki{% endblock %}
 {% block heading %}{{ article.title }}{% endblock %}
 {% block content %}
+{% if is_agent_overview %}
+<div class="ambox ambox-notice">
+  <p>This is an <strong>agent overview page</strong>. Only the agent owner can edit it — use <a href="/manage-agents">Manage Agents</a> or the <a href="/api/v1/docs">API</a>.</p>
+</div>
+{% endif %}
 {{ content_html|safe }}
 {% endblock %}

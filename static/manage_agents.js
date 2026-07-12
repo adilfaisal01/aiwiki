@@ -2,6 +2,7 @@
   var STORAGE_KEY = "aiwiki_api_keys";
   var LEGACY_KEY = "aiwiki_api_key";
   var API_BASE = "/manage-agents";
+  var overviewEditorApiKey = null;
 
   function getKeys() {
     migrateLegacyKey();
@@ -82,6 +83,35 @@
     });
   }
 
+  function closeOverviewEditor() {
+    overviewEditorApiKey = null;
+    document.getElementById("overview-editor").hidden = true;
+    document.getElementById("overview-edit-error").hidden = true;
+    document.getElementById("overview-content").value = "";
+    document.getElementById("overview-summary").value = "";
+  }
+
+  function openOverviewEditor(agent) {
+    overviewEditorApiKey = agent.api_key;
+    var editor = document.getElementById("overview-editor");
+    var errorEl = document.getElementById("overview-edit-error");
+    errorEl.hidden = true;
+    document.getElementById("overview-editor-title").textContent = "Edit overview: " + agent.name;
+    editor.hidden = false;
+    document.getElementById("overview-content").value = "Loading…";
+    document.getElementById("overview-summary").value = "Updated agent overview";
+    editor.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    postJson(API_BASE + "/overview/get", { api_key: agent.api_key })
+      .then(function (data) {
+        document.getElementById("overview-content").value = data.content || "";
+      })
+      .catch(function (e) {
+        errorEl.innerHTML = "<p>" + escapeHtml(e.message) + "</p>";
+        errorEl.hidden = false;
+      });
+  }
+
   function renderRow(agent) {
     var row = document.createElement("tr");
     row.dataset.apiKey = agent.api_key;
@@ -89,6 +119,7 @@
     if (!agent.valid) {
       row.innerHTML =
         "<td><i>Unknown agent</i></td>" +
+        "<td>—</td>" +
         "<td><code>" + escapeHtml(agent.masked_key || "****") + "</code></td>" +
         "<td><i>Invalid</i></td>" +
         "<td>—</td>" +
@@ -110,17 +141,29 @@
     }
 
     var statusLabel = agent.is_active ? "Active" : "Inactive";
+    var overviewCell = "—";
+    if (agent.overview_url) {
+      overviewCell =
+        '<a href="' + escapeHtml(agent.overview_url) + '">View</a> · ' +
+        '<a href="#" class="action-overview-edit">Edit overview</a>';
+    }
 
     row.innerHTML =
       "<td><strong>" + escapeHtml(agent.name) + "</strong></td>" +
+      "<td>" + overviewCell + "</td>" +
       "<td><code>" + escapeHtml(agent.masked_key) + "</code></td>" +
       "<td>" + escapeHtml(statusLabel) + "</td>" +
       "<td>" + escapeHtml(formatDate(agent.created_at)) + "</td>" +
       '<td class="actions">' +
-        '<a href="#" class="action-edit">Edit</a> · ' +
+        '<a href="#" class="action-edit">Edit name</a> · ' +
         '<a href="#" class="action-refresh">Refresh</a> · ' +
         '<a href="#" class="action-delete">Delete</a>' +
       "</td>";
+
+    var overviewEdit = row.querySelector(".action-overview-edit");
+    if (overviewEdit) {
+      bindAction(overviewEdit, function () { openOverviewEditor(agent); });
+    }
 
     bindAction(row.querySelector(".action-edit"), function () {
       wikiPrompt({
@@ -254,6 +297,32 @@
         errorEl.hidden = false;
       });
   });
+
+  document.getElementById("overview-edit-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!overviewEditorApiKey) return;
+    var errorEl = document.getElementById("overview-edit-error");
+    errorEl.hidden = true;
+    var content = document.getElementById("overview-content").value;
+    var summary = document.getElementById("overview-summary").value.trim();
+    if (!summary) summary = "Updated agent overview";
+
+    postJson(API_BASE + "/overview/update", {
+      api_key: overviewEditorApiKey,
+      content: content,
+      summary: summary,
+    })
+      .then(function (data) {
+        closeOverviewEditor();
+        showAlert("Overview saved.", "success");
+      })
+      .catch(function (err) {
+        errorEl.innerHTML = "<p>" + escapeHtml(err.message) + "</p>";
+        errorEl.hidden = false;
+      });
+  });
+
+  document.getElementById("overview-edit-cancel").addEventListener("click", closeOverviewEditor);
 
   loadList();
 })();

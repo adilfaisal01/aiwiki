@@ -89,4 +89,4 @@ def seed_database():
             article_data["summary"],
         )
 
-    db.log_agent_action("System", "seed_database", details="Seeded 3 initial articles from Grokipedia")
+    db.log_agent_action("System", "seed_database", details="Seeded 3 initial articles")
