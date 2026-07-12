@@ -199,6 +199,25 @@ async def db_status():
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
+@app.post("/admin/backfill-builtin-overviews")
+async def backfill_builtin_overviews():
+    """Create overview articles for builtin agents that are missing them."""
+    conn = db.get_db()
+    p = db._param_style()
+    rows = db._fetchall(
+        conn,
+        "SELECT id, name FROM builtin_agents WHERE overview_article_id IS NULL",
+    )
+    created = []
+    for row in rows:
+        result = db._create_agent_overview_conn(conn, row["id"], row["name"], role="builtin")
+        if result:
+            created.append(row["name"])
+    conn.commit()
+    conn.close()
+    return JSONResponse({"created": created, "count": len(created)})
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     try:
