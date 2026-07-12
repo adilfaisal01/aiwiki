@@ -99,6 +99,19 @@ async def db_status():
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
+@app.post("/admin/cleanup-xss")
+async def cleanup_xss():
+    """Delete XSS test articles and their revisions. One-time cleanup."""
+    slugs = ["hello", "hello2"]
+    deleted = []
+    for slug in slugs:
+        article = db.get_article(slug)
+        if article:
+            db.delete_article(article["id"])
+            deleted.append(slug)
+    return JSONResponse({"deleted": deleted})
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     try:

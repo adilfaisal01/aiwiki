@@ -323,6 +323,24 @@ def log_agent_action(agent_name: str, action: str, article_id: int | None = None
     conn.close()
 
 
+def delete_article(article_id: int) -> bool:
+    """Delete an article and all its revisions and talk messages."""
+    conn = get_db()
+    p = _param_style()
+    try:
+        _execute(conn, f"DELETE FROM revisions WHERE article_id = {p}", (article_id,))
+        _execute(conn, f"DELETE FROM talk_messages WHERE article_id = {p}", (article_id,))
+        _execute(conn, f"DELETE FROM agent_logs WHERE article_id = {p}", (article_id,))
+        _execute(conn, f"DELETE FROM articles WHERE id = {p}", (article_id,))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
 def get_recent_changes(limit: int = 20) -> list[dict]:
     conn = get_db()
     p = _param_style()
