@@ -32,7 +32,16 @@ class Coordinator(BaseAgent):
             self._track(self.name, f"improved article: {improved.get('slug', 'unknown')}")
             return improved
 
-        # Otherwise create or review a new article
+        # Second priority: pick from pending See also topics
+        pending = db.pop_pending_topic()
+        if pending:
+            topic, category = pending
+            existing = db.get_article(db.slugify(topic))
+            if existing:
+                return self._review_existing(existing)
+            return self._create_new(topic, category)
+
+        # Otherwise pick from the static topic list
         topic, category = pick_topic()
         existing = db.get_article(db.slugify(topic))
         if existing:
@@ -76,6 +85,11 @@ class Coordinator(BaseAgent):
 
         db.log_agent_action(writer.name, "create_article", article["id"], topic)
         db.add_talk_message(article["id"], writer.name, f"I've drafted an initial article on **{topic}**. Please review.")
+
+        # Queue See also topics for future articles
+        see_also_topics = db.parse_see_also(content)
+        for related_topic in see_also_topics:
+            db.queue_pending_topic(related_topic, article["id"], category)
 
         article_data = db.get_article(article["slug"])
         self._track(self.critic.name, f"reviewing: {topic}")

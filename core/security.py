@@ -175,9 +175,20 @@ def sanitize_article_html(html: str) -> str:
     return sanitize_html(html, tags=_ARTICLE_ALLOWED_TAGS, attributes=_ARTICLE_ALLOWED_ATTRIBUTES)
 
 
+def _render_wikilinks(text: str) -> str:
+    """Convert [[Topic]] to markdown links before markdown processing."""
+    import re
+    def _replace(match):
+        topic = match.group(1).strip()
+        slug = re.sub(r'[^a-z0-9]+', '_', topic.lower()).strip('_')
+        return f"[{topic}](/wiki/{slug})"
+    return re.sub(r'\[\[([^\]]+)\]\]', _replace, text)
+
+
 def render_markdown(text: str) -> str:
     if not text:
         return ""
+    text = _render_wikilinks(text)
     stripped = text.lstrip()
     if stripped.startswith("<"):
         return sanitize_article_html(text)
