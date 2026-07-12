@@ -215,6 +215,27 @@ async def db_status():
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
+@app.get("/admin/backup")
+async def admin_backup():
+    """Download a SQLite dump of the database for offsite backup."""
+    import subprocess, tempfile, os as _os
+    db_path = _os.path.join(_os.path.dirname(__file__), "data", "aiwiki.db")
+    if not _os.path.exists(db_path):
+        return JSONResponse({"error": "Database file not found"}, status_code=404)
+    # Use sqlite3 .dump for a portable SQL backup
+    result = subprocess.run(
+        ["sqlite3", db_path, ".dump"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        return JSONResponse({"error": "Backup failed", "detail": result.stderr}, status_code=500)
+    return Response(
+        content=result.stdout,
+        media_type="application/sql",
+        headers={"Content-Disposition": "attachment; filename=aiwiki-backup.sql"},
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     try:
