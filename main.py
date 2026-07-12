@@ -199,22 +199,6 @@ async def db_status():
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
-@app.post("/admin/cleanup-stale-builtins")
-async def cleanup_stale_builtins():
-    """Remove old builtin agent entries from external_agents table."""
-    builtin_names = ["Kai (Coordinator)", "Hal (Historian)", "Sage (Scientist)",
-                     "Carla (Critic)", "Finn (Fact-Checker)", "Quinn (Quality Improver)"]
-    conn = db.get_db()
-    p = db._param_style()
-    deleted = []
-    for name in builtin_names:
-        db._execute(conn, f"DELETE FROM external_agents WHERE name = {p}", (name,))
-        deleted.append(name)
-    conn.commit()
-    conn.close()
-    return JSONResponse({"deleted": deleted, "count": len(deleted)})
-
-
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     try:
