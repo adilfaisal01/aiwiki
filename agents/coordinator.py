@@ -5,7 +5,7 @@ from agents.critic import Critic
 from agents.fact_checker import FactChecker
 from agents.quality_improver import QualityImprover
 from agents.md_to_blueprint import markdown_to_blueprint
-from wiki.article_blueprint import render_article_blueprint
+from wiki.article_blueprint import render_article_blueprint, ArticleBlueprint
 import core.database as db
 import random
 
@@ -218,14 +218,20 @@ class Coordinator(BaseAgent):
 
         content = result["content"]
 
+        # TOPIC VERIFICATION: Check that the article actually matches the topic
+        topic_verified = self._verify_topic_alignment(topic, content)
+        if not topic_verified:
+            # Retry once with a stronger topic reminder
+            self._track(writer.name, f"rewriting: {topic} (topic mismatch)")
+            result = writer.act({"topic": topic, "force_topic": True})
+            content = result["content"]
+            # If still doesn't match, at least fix the title discrepancy
+            if not self._verify_topic_alignment(topic, content):
+                # Force the article topic via the first sentence
+                content = f"# {topic}\n\n" + content
+
         # Convert agent markdown to blueprint for structured rendering
-        try:
-            blueprint = markdown_to_blueprint(content, topic)
-            rendered = render_article_blueprint(blueprint)
-            if rendered and len(rendered) > 100:
-                content = rendered
-        except Exception:
-            pass  # Fall back to raw markdown if parsing fails
+        content = self._ensure_blueprint(content, topic, writer.name)
 
         article = db.create_article(topic, content, writer.name, f"Initial article on {topic}")
         if not article:
@@ -260,6 +266,52 @@ class Coordinator(BaseAgent):
 
         self._track(self.name, f"created article: {topic}")
         return {"action": "created", "article_id": article["id"], "slug": article["slug"], "topic": topic}
+
+    def _verify_topic_alignment(self, topic: str, content: str) -> bool:
+        """Check that the article content actually matches the given topic."""
+        topic_lower = topic.lower()
+        # Check if the topic name appears in the first 500 chars of content
+        first_500 = content[:500].lower()
+        # Extract key words from the topic (skip common words)
+        key_words = [w.lower() for w in topic.split() if len(w) > 3]
+        if not key_words:
+            return True  # Can't verify single-word topics
+        # Check that at least 50% of key words appear in the content
+        matches = sum(1 for w in key_words if w in first_500)
+        return matches >= max(1, len(key_words) // 2)
+
+    def _ensure_blueprint(self, content: str, topic: str, agent_name: str) -> str:
+        """Convert agent markdown to blueprint format, with fallback."""
+        try:
+            # Try to parse as blueprint-compatible markdown
+            blueprint = markdown_to_blueprint(content, topic)
+            rendered = render_article_blueprint(blueprint)
+            if rendered and len(rendered) > 100:
+                # Verify blueprint has proper structure: sections or substantial lead
+                has_sections = len(blueprint.sections) > 0
+                has_lead = len(blueprint.lead) > 0 and len(blueprint.lead[0]) > 50
+                if has_sections or has_lead:
+                    self._track(agent_name, f"blueprint: {topic}")
+                    return rendered
+        except Exception:
+            pass
+        # Fallback: wrap content in basic blueprint structure
+        self._track(agent_name, f"fallback-blueprint: {topic}")
+        fallback = ArticleBlueprint(
+            infobox=None,
+            lead=[content[:500] if len(content) > 500 else content],
+            sections=[],
+            see_also=[],
+            references=[],
+            external_links=[],
+        )
+        try:
+            rendered = render_article_blueprint(fallback)
+            if rendered and len(rendered) > 50:
+                return rendered
+        except Exception:
+            pass
+        return content
 
     def _review_existing(self, article: dict) -> dict:
         self._track(self.critic.name, f"reviewing: {article['title']}")

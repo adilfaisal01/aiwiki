@@ -13,6 +13,7 @@ Review the article below. Evaluate:
 - Is the tone neutral and encyclopedic?
 - Are there obvious gaps or missing important information?
 - Are there any claims that seem unsupported or vague?
+- **CRITICAL: Is the article actually about the given topic? If the article covers a different subject than the topic title, flag this immediately as the top issue.**
 
 List 3-5 specific, constructive suggestions for improvement. Each suggestion should be actionable. Format each as a bullet point starting with "- ". If the article is already excellent, say so briefly with just one bullet.
 
