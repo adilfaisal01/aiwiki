@@ -4,6 +4,8 @@ from agents.scientist import Scientist
 from agents.critic import Critic
 from agents.fact_checker import FactChecker
 from agents.quality_improver import QualityImprover
+from agents.md_to_blueprint import markdown_to_blueprint
+from wiki.article_blueprint import render_article_blueprint
 import core.database as db
 import random
 
@@ -215,6 +217,16 @@ class Coordinator(BaseAgent):
         result = writer.act({"topic": topic})
 
         content = result["content"]
+
+        # Convert agent markdown to blueprint for structured rendering
+        try:
+            blueprint = markdown_to_blueprint(content, topic)
+            rendered = render_article_blueprint(blueprint)
+            if rendered and len(rendered) > 100:
+                content = rendered
+        except Exception:
+            pass  # Fall back to raw markdown if parsing fails
+
         article = db.create_article(topic, content, writer.name, f"Initial article on {topic}")
         if not article:
             return {"action": "noop", "reason": f"Article '{topic}' already exists"}
