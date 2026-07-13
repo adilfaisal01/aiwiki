@@ -26,7 +26,13 @@ class Coordinator(BaseAgent):
 
     def act(self, context: dict) -> dict:
         self._track(self.name, "starting cycle")
-        # First priority: pick from pending See also topics
+        # First priority: improve existing low-quality articles
+        improved = self._improve_low_quality()
+        if improved:
+            self._track(self.name, f"improved article: {improved.get('slug', 'unknown')}")
+            return improved
+
+        # Second priority: pick from pending See also topics
         pending = db.pop_pending_topic()
         if pending:
             topic, category = pending
