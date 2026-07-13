@@ -246,7 +246,7 @@ async def admin_backup():
 async def admin_seed_topics():
     """Seed the pending_topics table from topics.json."""
     import json, os as _os
-    topics_path = _os.path.join(_os.path.dirname(__file__), "data", "topics.json")
+    topics_path = _os.path.join(_os.path.dirname(__file__), "topics.json")
     if not _os.path.exists(topics_path):
         return JSONResponse({"error": "topics.json not found"}, status_code=404)
     with open(topics_path) as f:
