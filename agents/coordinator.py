@@ -42,37 +42,40 @@ class Coordinator(BaseAgent):
             results.append(improved)
             _time.sleep(2.0)
 
-        # Step 3: Create a new article (use a fresh connection with retry)
+        # Step 3: Create new articles (batch — 3 per cycle)
         import sqlite3 as _sqlite3
-        for _attempt in range(5):
-            try:
-                pending = db.pop_pending_topic()
-                break
-            except _sqlite3.OperationalError as e:
-                if "locked" in str(e) and _attempt < 4:
-                    _time.sleep(2.0 * (_attempt + 1))
-                    continue
-                raise
-
-        if pending:
-            topic, category = pending
+        import threading as _threading
+        batch_size = 3
+        new_articles = []
+        
+        for _ in range(batch_size):
+            pending = None
+            for _attempt in range(5):
+                try:
+                    pending = db.pop_pending_topic()
+                    break
+                except _sqlite3.OperationalError as e:
+                    if "locked" in str(e) and _attempt < 4:
+                        _time.sleep(2.0 * (_attempt + 1))
+                        continue
+                    raise
+            
+            if not pending:
+                topic, category = pick_topic()
+            else:
+                topic, category = pending
+            
             existing = db.get_article(db.slugify(topic))
             if existing:
                 result = self._review_existing(existing)
             else:
                 result = self._create_new(topic, category)
-        else:
-            topic, category = pick_topic()
-            existing = db.get_article(db.slugify(topic))
-            if existing:
-                result = self._review_existing(existing)
-            else:
-                result = self._create_new(topic, category)
-        if result:
-            results.append(result)
+            if result:
+                results.append(result)
+                new_articles.append(result)
 
         if results:
-            return {"action": "multi", "steps": results}
+            return {"action": "multi", "steps": results, "batch_size": len(new_articles)}
         return {"action": "noop", "reason": "nothing to do"}
 
     def _review_external_submissions(self) -> dict | None:
