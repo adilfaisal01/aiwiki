@@ -2,20 +2,23 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, model_validator
+import httpx
 
 import core.database as db
 import core.security as security
 from aitools import ops as aitool_ops
-from aitools.api_spec import attach_tool_api, build_tool_api_spec
+from aitools.api_spec import attach_tool_api
 from external_api.routes import (
     EditSubmit,
     enforce_api_rate_limit,
     verify_api_key,
 )
+from aitools.tool_runtime import execute_server_tool, validate_tool_spec_for_publish
+from aitools.tool_spec import tool_execution_mode, tool_spec_from_blueprint
+from aitools.tool_blueprint import example_tool_blueprint
 from wiki.article_blueprint import (
     ArticleBlueprint,
     blueprint_schema,
-    example_tool_blueprint,
     render_article_blueprint,
     resolve_article_content,
 )
@@ -61,7 +64,10 @@ async def get_tool_blueprint():
         "description": (
             "Canonical AITools page format. Same schema as encyclopedia articles: "
             "optional infobox with image, lead paragraphs, sections with optional "
-            "thumbnails and code blocks."
+            "thumbnails and code blocks. Include a Made by infobox field "
+            "(use QuBrain for first-party tools). "
+            "Set tool.execution to client or server; server tools reference a "
+            "builtin server_handler id (e.g. web_search) in the article blueprint."
         ),
         "reference_slug": "text_uppercase",
         "reference_url": "/tools/text_uppercase",
@@ -76,12 +82,33 @@ async def preview_tool_blueprint(blueprint: ArticleBlueprint):
     return {"html": html, "length": len(html)}
 
 
+def _tool_spec_from_request(
+    *,
+    blueprint: ArticleBlueprint | None,
+    allow_default_spec: bool,
+) -> tuple[str | None, bool]:
+    if blueprint is None:
+        return None, False
+    if blueprint.tool is None:
+        if not allow_default_spec:
+            return None, False
+        return tool_spec_from_blueprint(None), True
+    validate_tool_spec_for_publish(blueprint.tool)
+    return tool_spec_from_blueprint(blueprint.tool), True
+
+
 @router.post("/contribute/tool", dependencies=[Depends(enforce_api_rate_limit)])
 async def contribute_tool(req: ToolSubmit, agent: dict = Depends(verify_api_key)):
     try:
         title = security.validate_title(req.title)
         content = _validated_tool_body(content=req.content, blueprint=req.blueprint)
         summary = security.validate_summary(req.summary)
+        tool_spec_json, _ = _tool_spec_from_request(
+            blueprint=req.blueprint,
+            allow_default_spec=True,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except security.ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     check = db.check_aitool_title(title)
@@ -97,6 +124,7 @@ async def contribute_tool(req: ToolSubmit, agent: dict = Depends(verify_api_key)
         title=title,
         content=content,
         summary=summary,
+        tool_spec_json=tool_spec_json,
     )
     if not result:
         raise HTTPException(status_code=409, detail="Tool with this title already exists")
@@ -111,6 +139,12 @@ async def contribute_tool_edit(req: EditSubmit, agent: dict = Depends(verify_api
     try:
         content = _validated_tool_body(content=req.content, blueprint=req.blueprint)
         summary = security.validate_summary(req.summary)
+        tool_spec_json, update_tool_spec = _tool_spec_from_request(
+            blueprint=req.blueprint,
+            allow_default_spec=False,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except security.ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     result = aitool_ops.edit_aitool(
@@ -119,6 +153,8 @@ async def contribute_tool_edit(req: EditSubmit, agent: dict = Depends(verify_api
         article,
         content=content,
         summary=summary,
+        tool_spec_json=tool_spec_json,
+        update_tool_spec=update_tool_spec,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Tool not found")
@@ -144,7 +180,8 @@ async def get_tool(slug: str):
         "slug": article["slug"],
         "content": article["content"],
         "updated_at": article["updated_at"],
-    })
+        "tool_spec_json": article.get("tool_spec_json"),
+    }, article=article)
 
 
 @router.post("/tool/{slug}/invoke", dependencies=[Depends(enforce_api_rate_limit)])
@@ -153,7 +190,36 @@ async def invoke_tool(slug: str, request: Request, agent: dict = Depends(verify_
     if not article or not db.is_aitool(article):
         raise HTTPException(status_code=404, detail="Tool not found")
     _ = agent
-    _ = request
+
+    body: dict = {}
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
+        if payload is not None and not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="JSON body must be an object")
+        body = payload or {}
+
+    if tool_execution_mode(article) == "server":
+        try:
+            result = await execute_server_tool(article, body)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Tool handler not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail="Upstream search request failed") from exc
+        user_id = agent.get("user_id")
+        if user_id:
+            db.record_server_tool_invoke(user_id)
+        return {
+            "slug": article["slug"],
+            "title": article["title"],
+            "execution": "server",
+            "result": result,
+        }
+
     return {
         "slug": article["slug"],
         "title": article["title"],

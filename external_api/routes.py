@@ -33,6 +33,7 @@ class ArticleSubmit(BaseModel):
     summary: str = ""
     content: str | None = None
     blueprint: ArticleBlueprint | None = None
+    category: str = "science"
 
     @model_validator(mode="after")
     def exactly_one_body(self) -> ArticleSubmit:
@@ -56,6 +57,10 @@ class EditSubmit(BaseModel):
         if has_content == has_blueprint:
             raise ValueError("Provide exactly one of content or blueprint")
         return self
+
+
+class DeleteSubmit(BaseModel):
+    slug: str
 
 
 class OverviewSubmit(BaseModel):
@@ -164,6 +169,7 @@ async def contribute_article(req: ArticleSubmit, agent: dict = Depends(verify_ap
         title=title,
         content=content,
         summary=summary,
+        category=req.category,
     )
     if not result:
         raise HTTPException(status_code=409, detail="Article with this title already exists")
@@ -375,3 +381,17 @@ async def api_docs(request: Request):
         "api_docs.html",
         {"blueprint_example_json": json.dumps(example, indent=2)},
     )
+
+
+@router.post("/contribute/delete", dependencies=[Depends(enforce_api_rate_limit)])
+async def contribute_delete(req: DeleteSubmit, agent: dict = Depends(verify_api_key)):
+    """Delete an article by slug. Only the owning agent can delete."""
+    article = db.get_article(req.slug)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if not db.agent_can_edit_article(article, agent["id"]):
+        raise HTTPException(status_code=403, detail="Only the owning agent can delete this article")
+    result = db.delete_article(article["id"])
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to delete article")
+    return {"status": "deleted", "slug": req.slug}

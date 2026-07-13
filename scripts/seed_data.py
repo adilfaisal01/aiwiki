@@ -1,5 +1,7 @@
 import core.database as db
-from wiki.article_blueprint import example_tool_blueprint, render_article_blueprint
+from aitools.tool_blueprint import example_tool_blueprint, web_search_tool_blueprint
+from aitools.tool_spec import tool_spec_from_blueprint
+from wiki.article_blueprint import render_article_blueprint
 
 SEED_ARTICLES = [
     {
@@ -91,11 +93,88 @@ The Nobel Prize in Physics has significantly shaped research directions by recog
 SEED_TOOLS = [
     {
         "title": "Text Uppercase",
+        "slug": "text_uppercase",
         "summary": "Seed tool — converts text to uppercase on the client",
-        "content": render_article_blueprint(example_tool_blueprint()),
+        "blueprint": example_tool_blueprint,
+        "agent": "System",
+    },
+    {
+        "title": "Web Search",
+        "slug": "web_search",
+        "summary": "Seed tool — server-side web search via DuckDuckGo",
+        "blueprint": web_search_tool_blueprint,
         "agent": "System",
     },
 ]
+
+
+def _seed_tool_content(tool_data: dict) -> str:
+    blueprint = tool_data["blueprint"]
+    return render_article_blueprint(blueprint() if callable(blueprint) else blueprint)
+
+
+def _seed_tool_spec_json(tool_data: dict) -> str | None:
+    blueprint = tool_data["blueprint"]
+    bp = blueprint() if callable(blueprint) else blueprint
+    return tool_spec_from_blueprint(bp.tool)
+
+
+def _ensure_seed_tools() -> int:
+    """Create any missing seed tools (e.g. after new tools are added)."""
+    from core import config
+
+    if not config.AITOOLS_ENABLED:
+        return 0
+
+    created = 0
+    for tool_data in SEED_TOOLS:
+        slug = tool_data.get("slug") or db.slugify(tool_data["title"])
+        if db.get_article(slug):
+            continue
+        db.create_article(
+            tool_data["title"],
+            _seed_tool_content(tool_data),
+            tool_data["agent"],
+            tool_data["summary"],
+            article_kind="aitool",
+            tool_spec_json=_seed_tool_spec_json(tool_data),
+        )
+        created += 1
+    if created:
+        db.log_agent_action("System", "seed_tools", details=f"Added {created} seed tool(s)")
+    return created
+
+
+def _sync_seed_tools() -> int:
+    """Upgrade known seed tools to the latest blueprint layout (e.g. infobox)."""
+    from core import config
+
+    if not config.AITOOLS_ENABLED:
+        return 0
+
+    updated = 0
+    for tool_data in SEED_TOOLS:
+        slug = tool_data.get("slug") or db.slugify(tool_data["title"])
+        article = db.get_article(slug)
+        if not article or not db.is_aitool(article):
+            continue
+        content = _seed_tool_content(tool_data)
+        tool_spec_json = _seed_tool_spec_json(tool_data)
+        if (
+            content == article.get("content")
+            and tool_spec_json == article.get("tool_spec_json")
+        ):
+            continue
+        db.update_article(
+            article["id"],
+            content,
+            tool_data["agent"],
+            tool_data["summary"],
+            tool_spec_json=tool_spec_json,
+            update_tool_spec=True,
+        )
+        updated += 1
+    return updated
 
 
 def seed_database():
@@ -112,13 +191,8 @@ def seed_database():
 
     from core import config
 
-    if config.AITOOLS_ENABLED and not db.get_aitools():
-        for tool_data in SEED_TOOLS:
-            db.create_article(
-                tool_data["title"],
-                tool_data["content"],
-                tool_data["agent"],
-                tool_data["summary"],
-                article_kind="aitool",
-            )
-        db.log_agent_action("System", "seed_tools", details=f"Seeded {len(SEED_TOOLS)} initial tools")
+    if config.AITOOLS_ENABLED:
+        created = _ensure_seed_tools()
+        synced = _sync_seed_tools()
+        if synced:
+            db.log_agent_action("System", "sync_seed_tools", details=f"Updated {synced} seed tool(s) to latest blueprint")

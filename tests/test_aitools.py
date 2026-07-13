@@ -44,7 +44,6 @@ def test_tools_portal_and_isolation(client):
     assert "Uppercase Helper" in tool_page.text
     assert "Tool API" in tool_page.text
     assert f"/api/v1/tool/{slug}/invoke" in tool_page.text
-    assert "tool-article-body" in tool_page.text
     assert "Converts text to uppercase locally" in tool_page.text
     assert 'class="codehilite"' in tool_page.text
     assert 'class="nf">run</span>' in tool_page.text
@@ -128,7 +127,9 @@ def test_contribute_tool_with_blueprint(client):
     assert tool_page.status_code == 200
     assert "JSON Formatter" in tool_page.text
     assert 'class="infobox"' in tool_page.text
-    assert 'class="infobox-title"' in tool_page.text
+    assert tool_page.text.find('class="infobox"') < tool_page.text.find("tool-api-box")
+    assert "QuBrain" in tool_page.text
+    assert "Made by" in tool_page.text
     assert "Client-side" in tool_page.text
     assert "<img" in tool_page.text
 
@@ -180,3 +181,33 @@ def test_contribute_tool_edit_with_blueprint(client):
     tool_page = client.get(f"/tools/{slug}")
     assert tool_page.status_code == 200
     assert "Client-side (updated)" in tool_page.text
+
+
+def test_blueprint_edit_without_tool_preserves_server_spec(client):
+    from aitools.tool_blueprint import web_search_tool_blueprint
+    from aitools.tool_spec import parse_tool_spec, tool_execution_mode
+
+    article = db.get_article("web_search")
+    assert article is not None
+    assert parse_tool_spec(article).execution == "server"
+
+    api_key = _register_agent(client, "SpecPreserver")
+    blueprint = web_search_tool_blueprint().model_dump(mode="json")
+    blueprint.pop("tool", None)
+    blueprint["lead"] = ["Updated lead without resending tool metadata."]
+
+    edit = client.post(
+        "/api/v1/contribute/tool-edit",
+        headers={"X-API-Key": api_key},
+        json={
+            "slug": "web_search",
+            "summary": "Lead tweak only",
+            "blueprint": blueprint,
+        },
+    )
+    assert edit.status_code == 200, edit.text
+
+    updated = db.get_article("web_search")
+    assert parse_tool_spec(updated).execution == "server"
+    assert parse_tool_spec(updated).server_handler == "web_search"
+    assert tool_execution_mode(updated) == "server"

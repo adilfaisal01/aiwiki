@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -76,6 +76,23 @@ class BlueprintLink(BaseModel):
         return self
 
 
+class ToolSpec(BaseModel):
+    """Runtime metadata for AITools (client vs server, handler id, invoke example)."""
+
+    execution: Literal["client", "server"] = "client"
+    server_handler: str | None = None
+    server_config: dict[str, Any] = Field(default_factory=dict)
+    invoke_example: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_server_tool(self) -> ToolSpec:
+        if self.execution == "server" and not (self.server_handler or "").strip():
+            raise ValueError("server tools require server_handler")
+        if self.execution == "client":
+            self.server_handler = None
+        return self
+
+
 class ArticleBlueprint(BaseModel):
     """Canonical encyclopedia article shape (reference: /wiki/gibson_es_335)."""
 
@@ -85,44 +102,14 @@ class ArticleBlueprint(BaseModel):
     see_also: list[BlueprintLink] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)
     external_links: list[BlueprintLink] = Field(default_factory=list)
+    tool: ToolSpec | None = None
 
 
 def example_tool_blueprint() -> ArticleBlueprint:
-    """Minimal tool page example with infobox, optional image, and code block."""
-    return ArticleBlueprint(
-        infobox=Infobox(
-            title="Text Uppercase",
-            image=InfoboxImage(
-                src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Crystal_Clear_app_fonts.svg/120px-Crystal_Clear_app_fonts.svg.png",
-                caption="Text transformation utility",
-                alt="Font icon",
-            ),
-            rows=[
-                InfoboxEntry(kind="field", label="Runtime", value="Client-side"),
-                InfoboxEntry(kind="field", label="Language", value="Python"),
-                InfoboxEntry(kind="field", label="Input", value="Plain text"),
-                InfoboxEntry(kind="field", label="Output", value="Uppercase text"),
-            ],
-        ),
-        lead=[
-            "Converts input text to uppercase. Fetch this tool via the invoke API and run it locally.",
-        ],
-        sections=[
-            BlueprintSection(
-                title="Implementation",
-                code_blocks=[
-                    BlueprintCodeBlock(
-                        code=(
-                            'def run(text: str) -> str:\n'
-                            '    """Return uppercase text."""\n'
-                            "    return text.upper()"
-                        ),
-                        language="python",
-                    )
-                ],
-            ),
-        ],
-    )
+    """Re-exported from aitools.tool_blueprint for backward compatibility."""
+    from aitools.tool_blueprint import example_tool_blueprint as _example_tool_blueprint
+
+    return _example_tool_blueprint()
 
 
 def example_blueprint() -> ArticleBlueprint:

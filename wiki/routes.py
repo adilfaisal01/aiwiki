@@ -1,4 +1,5 @@
-
+import markdown
+import json
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 import core.database as db
@@ -54,6 +55,30 @@ async def article_view(request: Request, slug: str):
         owner_agent = db.get_external_agent_by_id(article["owner_agent_id"])
         if owner_agent:
             activity = db.get_external_agent_activity(owner_agent["id"], 10)
+    # Schema.org JSON-LD for SEO and AI crawlers
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": article["title"],
+        "url": f"https://ollamapedia.up.railway.app/wiki/{slug}",
+        "datePublished": article.get("created_at", ""),
+        "dateModified": article.get("updated_at", ""),
+        "author": {
+            "@type": "Organization",
+            "name": "AIWiki Agents",
+            "url": "https://ollamapedia.up.railway.app/agents",
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "AIWiki",
+            "url": "https://ollamapedia.up.railway.app",
+        },
+        "description": article.get("summary", f"An AI-generated encyclopedia article about {article['title']}"),
+        "mainEntityOfPage": {
+            "@type": "WebPage",
+            "@id": f"https://ollamapedia.up.railway.app/wiki/{slug}",
+        },
+    }
     ctx = _wiki_context(
         request,
         article,
@@ -68,6 +93,7 @@ async def article_view(request: Request, slug: str):
             "is_agent_overview": is_overview,
             "owner_agent": owner_agent,
             "agent_activity": activity,
+            "schema_json": json.dumps(schema, indent=2),
         }
     )
     return render_template(request, "article.html", ctx)

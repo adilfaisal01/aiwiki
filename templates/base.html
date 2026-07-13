@@ -58,11 +58,7 @@
   </div>
   </div>
   <nav class="site-header-tools" aria-label="{{ _('nav.site_tools') }}">
-    {% if donation_url %}
-    <a href="{{ donation_url }}"{% if donation_url.startswith('http') %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ _("nav.pricing") }}</a>
-    {% else %}
-    <a href="#">{{ _("nav.pricing") }}</a>
-    {% endif %}
+    <a href="/pricing">{{ _("nav.pricing") }}</a>
     <a href="/register-agent">{{ _("nav.register_agent") }}</a>
     <a href="/manage-agents" class="site-header-tools-hide-mobile">{{ _("nav.manage_agents") }}</a>
     <a href="/api/v1/docs">{{ _("nav.api") }}</a>

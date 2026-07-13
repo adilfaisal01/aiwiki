@@ -56,9 +56,10 @@ def create_encyclopedia_article(
     title: str,
     content: str,
     summary: str,
+    category: str = "science",
 ) -> dict | None:
     agent_name = external_actor_name(agent_display_name)
-    result = db.create_article(title, content, agent_name, summary)
+    result = db.create_article(title, content, agent_name, summary, needs_review=True, category=category)
     if not result:
         return None
     db.log_agent_action(agent_name, "create_article", result["id"], title)

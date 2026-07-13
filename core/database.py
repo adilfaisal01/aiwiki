@@ -1,6 +1,7 @@
 import hashlib
 import re
 import secrets
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,10 +40,15 @@ def _get_sqlite():
     import sqlite3
     db_path = _sqlite_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=10)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # Only set WAL mode if not already set (avoids exclusive lock on every connect)
+    cur = conn.execute("PRAGMA journal_mode")
+    if cur.fetchone()[0] != "wal":
+        conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.commit()  # Clear implicit transaction from PRAGMAs
     return conn
 
 
@@ -97,7 +103,16 @@ def _execute(conn, query, params=()):
         cur.execute(query, params)
         cur.close()
     else:
-        conn.execute(query, params)
+        import time
+        for attempt in range(5):
+            try:
+                conn.execute(query, params)
+                return
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e) and attempt < 4:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+                raise
 
 
 def _execute_returning(conn, query, params=()):
@@ -107,8 +122,16 @@ def _execute_returning(conn, query, params=()):
         row = cur.fetchone()
         cur.close()
         return row[0] if row else None
-    cur = conn.execute(query, params)
-    return cur.lastrowid
+    import time
+    for attempt in range(5):
+        try:
+            cur = conn.execute(query, params)
+            return cur.lastrowid
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < 4:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
 
 
 def _param_style():
@@ -139,6 +162,12 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+    # Ensure needs_review column exists (safe for SQLite ALTER TABLE)
+    if not _column_exists(conn, "articles", "needs_review"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
+    # Ensure category column exists (safe for SQLite ALTER TABLE)
+    if not _column_exists(conn, "articles", "category"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN category TEXT NOT NULL DEFAULT 'science'")
     _execute(conn, f"""
         CREATE TABLE IF NOT EXISTS revisions (
             id {sid},
@@ -176,6 +205,28 @@ def init_db():
             article_id INTEGER,
             details TEXT,
             timestamp TEXT NOT NULL
+        )
+    """)
+    _execute(conn, f"""
+        CREATE TABLE IF NOT EXISTS builtin_agents (
+            id {sid},
+            name TEXT NOT NULL UNIQUE,
+            role TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_seen_at TEXT,
+            last_action TEXT,
+            last_action_at TEXT,
+            overview_article_id INTEGER
+        )
+    """)
+    _execute(conn, f"""
+        CREATE TABLE IF NOT EXISTS pending_topics (
+            id {sid},
+            topic TEXT NOT NULL UNIQUE,
+            source_article_id INTEGER,
+            category TEXT NOT NULL DEFAULT 'science',
+            queued_at TEXT NOT NULL,
+            picked_at TEXT
         )
     """)
     _execute(conn, """
@@ -247,8 +298,9 @@ def agent_overview_title(name: str) -> str:
     return f"{name} (Agent Overview)"
 
 
-def default_agent_overview_content(name: str, *, builtin: bool = False) -> str:
-    if builtin:
+def default_agent_overview_content(name: str, role: str = "external", *, builtin: bool | None = None) -> str:
+    is_builtin = builtin if builtin is not None else role == "builtin"
+    if is_builtin:
         from core.builtin_agents import default_builtin_overview_content
 
         return default_builtin_overview_content(name)
@@ -300,12 +352,14 @@ def _create_agent_overview_conn(
     conn,
     agent_id: int,
     agent_name: str,
+    role: str = "external",
     *,
     builtin: bool = False,
 ) -> dict | None:
     title = agent_overview_title(agent_name)
     slug = _unique_slug(conn, agent_overview_slug(agent_name))
-    content = default_agent_overview_content(agent_name, builtin=builtin)
+    overview_role = "builtin" if builtin else role
+    content = default_agent_overview_content(agent_name, overview_role)
     ts = now()
     p = _param_style()
     returning = " RETURNING id" if config.is_postgres() else ""
@@ -322,7 +376,7 @@ def _create_agent_overview_conn(
             f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
             (article_id, content, agent_label, "Agent overview page created", ts),
         )
-        if builtin:
+        if builtin or role == "builtin":
             _execute(
                 conn,
                 f"UPDATE builtin_agents SET overview_article_id = {p} WHERE id = {p}",
@@ -378,8 +432,8 @@ def update_agent_activity(agent_name: str, action: str = "") -> None:
     else:
         _execute(
             conn,
-            f"UPDATE external_agents SET last_seen_at = {p} WHERE name = {p} AND is_active = 1",
-            (ts, agent_name),
+            f"UPDATE external_agents SET last_seen_at = {p}, last_action = {p}, last_action_at = {p} WHERE name = {p} AND is_active = 1",
+            (ts, action, ts, agent_name),
         )
     conn.commit()
     conn.close()
@@ -406,6 +460,9 @@ def create_article(
     summary: str = "",
     article_kind: str = "encyclopedia",
     owner_agent_id: int | None = None,
+    needs_review: bool = False,
+    category: str = "science",
+    tool_spec_json: str | None = None,
 ) -> dict | None:
     conn = get_db()
     title = sanitize(title)
@@ -416,17 +473,25 @@ def create_article(
     ts = now()
     p = _param_style()
     returning = " RETURNING id" if config.is_postgres() else ""
+    # Ensure needs_review column exists (safe for SQLite ALTER TABLE)
+    if not _column_exists(conn, "articles", "needs_review"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
+    # Ensure category column exists
+    if not _column_exists(conn, "articles", "category"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN category TEXT NOT NULL DEFAULT 'science'")
+    if not _column_exists(conn, "articles", "tool_spec_json"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN tool_spec_json TEXT")
     try:
         article_id = _execute_returning(
             conn,
-            f"INSERT INTO articles (title, slug, content, created_at, updated_at, article_kind, owner_agent_id) "
-            f"VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}){returning}",
-            (title, slug, content, ts, ts, article_kind, owner_agent_id),
+            f"INSERT INTO articles (title, slug, content, created_at, updated_at, article_kind, owner_agent_id, needs_review, category, tool_spec_json) "
+            f"VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}){returning}",
+            (title, slug, content, ts, ts, article_kind, owner_agent_id, 1 if needs_review else 0, category, tool_spec_json),
         )
         _execute(conn, f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                  (article_id, content, agent_name, summary, ts))
         conn.commit()
-        return {"id": article_id, "title": title, "slug": slug}
+        return {"id": article_id, "title": title, "slug": slug, "tool_spec_json": tool_spec_json}
     except Exception:
         conn.rollback()
         return None
@@ -448,12 +513,27 @@ def get_article_by_id(article_id: int) -> dict | None:
     return row
 
 
-def update_article(article_id: int, content: str, agent_name: str, summary: str = "") -> bool:
+def update_article(
+    article_id: int,
+    content: str,
+    agent_name: str,
+    summary: str = "",
+    *,
+    tool_spec_json: str | None = None,
+    update_tool_spec: bool = False,
+) -> bool:
     conn = get_db()
     ts = now()
     p = _param_style()
-    _execute(conn, f"UPDATE articles SET content = {p}, updated_at = {p} WHERE id = {p}",
-             (content, ts, article_id))
+    if update_tool_spec:
+        _execute(
+            conn,
+            f"UPDATE articles SET content = {p}, updated_at = {p}, tool_spec_json = {p} WHERE id = {p}",
+            (content, ts, tool_spec_json, article_id),
+        )
+    else:
+        _execute(conn, f"UPDATE articles SET content = {p}, updated_at = {p} WHERE id = {p}",
+                 (content, ts, article_id))
     _execute(conn, f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
              (article_id, content, agent_name, summary, ts))
     conn.commit()
@@ -475,8 +555,10 @@ def get_revision(revision_id: int) -> dict | None:
     return row
 
 
-def add_talk_message(article_id: int, agent_name: str, message: str, parent_id: int | None = None) -> int:
-    conn = get_db()
+def add_talk_message(article_id: int, agent_name: str, message: str, parent_id: int | None = None, conn=None) -> int:
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db()
     ts = now()
     agent_name = sanitize(agent_name)
     message = sanitize(message, max_len=5000)
@@ -485,8 +567,9 @@ def add_talk_message(article_id: int, agent_name: str, message: str, parent_id: 
     msg_id = _execute_returning(
         conn, f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p}){returning}",
         (article_id, agent_name, message, parent_id, ts))
-    conn.commit()
-    conn.close()
+    if own_conn:
+        conn.commit()
+        conn.close()
     return msg_id
 
 
@@ -542,8 +625,11 @@ def register_external_agent(name: str, user_id: str | None = None) -> dict | Non
 def verify_external_agent(api_key: str) -> dict | None:
     conn = get_db()
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    row = _fetchone(conn, f"SELECT id, name FROM external_agents WHERE api_key_hash = {_param_style()} AND is_active = 1",
-                    (api_key_hash,))
+    row = _fetchone(
+        conn,
+        f"SELECT id, name, user_id FROM external_agents WHERE api_key_hash = {_param_style()} AND is_active = 1",
+        (api_key_hash,),
+    )
     if row:
         ts = now()
         p = _param_style()
@@ -551,6 +637,47 @@ def verify_external_agent(api_key: str) -> dict | None:
         conn.commit()
     conn.close()
     return row
+
+
+def current_usage_period() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def record_server_tool_invoke(user_id: str) -> int:
+    period = current_usage_period()
+    conn = get_db()
+    p = _param_style()
+    _execute(
+        conn,
+        f"""
+        INSERT INTO user_server_invoke_usage (user_id, period, invoke_count)
+        VALUES ({p}, {p}, 1)
+        ON CONFLICT(user_id, period) DO UPDATE SET
+            invoke_count = invoke_count + 1
+        """,
+        (user_id, period),
+    )
+    row = _fetchone(
+        conn,
+        f"SELECT invoke_count FROM user_server_invoke_usage WHERE user_id = {p} AND period = {p}",
+        (user_id, period),
+    )
+    conn.commit()
+    conn.close()
+    return int(row["invoke_count"]) if row else 0
+
+
+def get_server_invoke_count(user_id: str, period: str | None = None) -> int:
+    period = period or current_usage_period()
+    conn = get_db()
+    p = _param_style()
+    row = _fetchone(
+        conn,
+        f"SELECT invoke_count FROM user_server_invoke_usage WHERE user_id = {p} AND period = {p}",
+        (user_id, period),
+    )
+    conn.close()
+    return int(row["invoke_count"]) if row else 0
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -880,6 +1007,107 @@ def get_all_articles() -> list[dict]:
     rows = _fetchall(conn, "SELECT id, title, slug, updated_at, article_kind FROM articles ORDER BY updated_at DESC")
     conn.close()
     return rows
+
+
+def get_articles_needing_review() -> list[dict]:
+    """Get articles submitted by external agents that haven't been reviewed yet."""
+    conn = get_db()
+    p = _param_style()
+    rows = _fetchall(
+        conn,
+        "SELECT id, title, slug, content, updated_at FROM articles WHERE needs_review = 1 AND article_kind != 'agent_overview' ORDER BY updated_at ASC LIMIT 5",
+    )
+    conn.close()
+    return rows
+
+
+def clear_needs_review(article_id: int):
+    """Mark an article as reviewed."""
+    conn = get_db()
+    p = _param_style()
+    _execute(conn, f"UPDATE articles SET needs_review = 0 WHERE id = {p}", (article_id,))
+    conn.commit()
+    conn.close()
+
+
+def queue_pending_topic(topic: str, source_article_id: int | None = None, category: str = "science") -> bool:
+    """Add a topic to the pending queue if not already queued or written."""
+    conn = get_db()
+    p = _param_style()
+    ts = now()
+    existing = _fetchone(conn, f"SELECT id FROM articles WHERE slug = {p}", (slugify(topic),))
+    if existing:
+        conn.close()
+        return False
+    existing = _fetchone(conn, f"SELECT id FROM pending_topics WHERE topic = {p}", (topic,))
+    if existing:
+        conn.close()
+        return False
+    _execute(
+        conn,
+        f"INSERT INTO pending_topics (topic, source_article_id, category, queued_at) VALUES ({p}, {p}, {p}, {p})",
+        (topic, source_article_id, category, ts),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def pop_pending_topic() -> tuple[str, str] | None:
+    """Get the oldest unpicked pending topic and mark it as picked."""
+    import time
+    conn = get_db()
+    p = _param_style()
+    for attempt in range(5):
+        try:
+            row = _fetchone(
+                conn,
+                "SELECT id, topic, category FROM pending_topics WHERE picked_at IS NULL ORDER BY RANDOM() LIMIT 1",
+            )
+            break
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < 4:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
+    if not row:
+        conn.close()
+        return None
+    ts = now()
+    for attempt in range(5):
+        try:
+            _execute(conn, f"UPDATE pending_topics SET picked_at = {p} WHERE id = {p}", (ts, row["id"]))
+            break
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < 4:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
+    conn.commit()
+    conn.close()
+    return row["topic"], row["category"]
+
+
+def get_pending_topic_count() -> int:
+    conn = get_db()
+    row = _fetchone(conn, "SELECT COUNT(*) AS cnt FROM pending_topics WHERE picked_at IS NULL")
+    conn.close()
+    return row["cnt"] if row else 0
+
+
+def parse_see_also(content: str) -> list[str]:
+    """Extract [[wikilink]] topics from a See also section."""
+    import re
+    topics = []
+    see_also_match = re.search(r'##\s*See\s+[Aa]lso\s*\n(.*?)(?=\n##\s|\Z)', content, re.DOTALL)
+    if not see_also_match:
+        return topics
+    section = see_also_match.group(1)
+    for match in re.finditer(r'\[\[([^\]]+)\]\]', section):
+        topic = match.group(1).strip()
+        if topic:
+            topics.append(topic)
+    return topics
 
 
 def log_agent_action(agent_name: str, action: str, article_id: int | None = None, details: str = ""):

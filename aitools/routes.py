@@ -9,6 +9,7 @@ import core.database as db
 import core.security as security
 from core import config
 from aitools.api_spec import build_tool_api_spec
+from aitools.tool_spec import tool_execution_mode
 from aitools.portal import tools_portal_data
 from web.template_env import render_template
 from wiki.helpers import enrich_article_html
@@ -106,7 +107,8 @@ async def tool_view(request: Request, slug: str):
         content_html=content_html,
         show_toc=True,
     )
-    ctx["tool_api"] = build_tool_api_spec(slug, public_base_url=str(request.base_url).rstrip("/"))
+    ctx["tool_api"] = build_tool_api_spec(article, public_base_url=str(request.base_url).rstrip("/"))
+    ctx["tool_server_execution"] = tool_execution_mode(article) == "server"
     return render_template(request, "tool.html", ctx)
 
 

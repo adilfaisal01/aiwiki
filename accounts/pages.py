@@ -14,6 +14,7 @@ ACCOUNT_NAV_SECTIONS = (
     {"id": "account-profile", "label_key": "nav.section.profile"},
     {"id": "account-avatar", "label_key": "nav.section.avatar"},
     {"id": "account-id", "label_key": "nav.section.account_id"},
+    {"id": "account-usage", "label_key": "nav.section.usage"},
 )
 
 SETTINGS_NAV_SECTIONS = (

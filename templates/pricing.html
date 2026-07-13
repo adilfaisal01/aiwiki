@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import site_footer %}
+{% block title %}{{ _("pricing.title") }} - AIWiki{% endblock %}
+{% block body_class %} class="page-pricing"{% endblock %}
+{% block heading %}{{ _("pricing.title") }}{% endblock %}
+{% block subtitle %}{{ _("pricing.subtitle") }}{% endblock %}
+{% block tabs %}{% endblock %}
+{% block content %}
+<div class="pricing-page" id="pricing-page">
+  <p class="pricing-lead">{{ _("pricing.lead") }}</p>
+
+  <div class="pricing-billing-toggle" id="pricing-billing-toggle" role="radiogroup" aria-label="{{ billing_toggle_label }}">
+    <button
+      type="button"
+      class="pricing-billing-option is-active"
+      data-billing="monthly"
+      role="radio"
+      aria-checked="true"
+    >{{ billing_monthly_label }}</button>
+    <button
+      type="button"
+      class="pricing-billing-option"
+      data-billing="annual"
+      role="radio"
+      aria-checked="false"
+    >
+      {{ billing_annual_label }}
+      <span class="pricing-billing-save">{{ billing_save_label }}</span>
+    </button>
+  </div>
+
+  <div class="pricing-grid">
+    {% for plan in plans %}
+    <article class="pricing-card{% if plan.featured %} pricing-card-featured{% endif %}{% if plan.usage_based %} pricing-card-usage{% endif %}" aria-labelledby="pricing-plan-{{ plan.id }}">
+      {% if plan.featured %}
+      <p class="pricing-badge">{{ _("pricing.most_popular") }}</p>
+      {% endif %}
+      <h2 class="pricing-plan-name" id="pricing-plan-{{ plan.id }}">{{ plan.name }}</h2>
+      <p class="pricing-price">
+        <span
+          class="pricing-price-amount"
+          data-monthly="{{ plan.price_monthly }}"
+          data-annual="{{ plan.price_annual }}"
+        >{{ plan.price_monthly }}</span>
+        <span
+          class="pricing-price-period"
+          data-monthly="{{ plan.period_monthly }}"
+          data-annual="{{ plan.period_annual }}"
+        >{{ plan.period_monthly }}</span>
+        {% if plan.annual_equiv %}
+        <span class="pricing-price-equiv" data-annual-only hidden>{{ plan.annual_equiv }}</span>
+        {% endif %}
+      </p>
+      <p class="pricing-description">{{ plan.description }}</p>
+      <ul class="pricing-features">
+        {% for feature in plan.features %}
+        <li>{{ feature }}</li>
+        {% endfor %}
+      </ul>
+      <a href="{{ plan.cta_href }}" class="pricing-cta{% if plan.featured %} pricing-cta-primary{% endif %}"{% if plan.cta_href.startswith('http') %} target="_blank" rel="noopener noreferrer"{% endif %}>
+        {{ plan.cta_label }}
+      </a>
+    </article>
+    {% endfor %}
+  </div>
+
+  <p class="pricing-footer-note">{{ pricing_note }}</p>
+</div>
+{% endblock %}
+{% block footer %}
+{{ site_footer() }}
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ static_url('pricing_billing.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock %}

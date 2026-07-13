@@ -309,6 +309,11 @@ html:not([data-layout]) .layout-icon-wide {
   font-style: italic;
   font-size: 12px;
 }
+.agent-ago {
+  color: #72777d;
+  font-size: 11px;
+  margin-left: 2px;
+}
 .sidebar-show-all {
   padding: 4px 10px 0;
   margin: 0;
@@ -1060,6 +1065,63 @@ button.tab.account-auth-tab {
   vertical-align: middle;
   margin-right: 4px;
 }
+.account-usage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1em;
+}
+.account-usage-plan-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+.account-usage-plan-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.account-usage-plan-name {
+  font-size: 1.15em;
+}
+.account-usage-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+}
+.account-usage-metric-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75em;
+  font-size: 0.95em;
+  font-weight: 600;
+}
+.account-usage-metric-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.account-usage-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.account-usage-bar-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--text-link);
+  transition: width 0.25s ease;
+}
+.account-usage-bar-fill--high {
+  background: var(--warning-border, #b45309);
+}
+.account-usage-client-note {
+  margin-top: 0.25em;
+}
 
 #page-content {
   margin-left: 0;
@@ -1633,8 +1695,211 @@ button.tab.account-auth-tab {
 .tool-api-box .code-panel {
   margin-top: 16px;
 }
-.tool-article-body {
-  margin-top: 0.5em;
+
+/* Pricing page */
+.page-pricing #bodyContent {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.pricing-page {
+  padding: 0.25em 0 2em;
+}
+.pricing-lead {
+  margin: 0 0 1.75em;
+  font-size: 1.05em;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 52em;
+}
+.pricing-billing-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  margin: 0 0 1.5em;
+  padding: 0.25em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-muted);
+}
+.pricing-billing-option {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.92em;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0.45em 0.95em;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pricing-billing-option:hover {
+  color: var(--text-primary);
+}
+.pricing-billing-option:focus-visible {
+  outline: 2px solid var(--text-link);
+  outline-offset: 2px;
+}
+.pricing-billing-option.is-active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.pricing-billing-save {
+  display: inline-block;
+  margin-left: 0.35em;
+  padding: 0.1em 0.45em;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--success-border, #14866d);
+  background: color-mix(in srgb, var(--success-border, #14866d) 12%, transparent);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.25em;
+  align-items: stretch;
+}
+@media (max-width: 1100px) {
+  .pricing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.pricing-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  padding: 1.35em 1.25em 1.25em;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.pricing-card-featured {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 1px var(--border-accent), 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+.pricing-badge {
+  position: absolute;
+  top: -0.7em;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.2em 0.75em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--border-accent);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pricing-plan-name {
+  margin: 0 0 0.35em;
+  font-size: 1.35em;
+  font-weight: 600;
+  font-family: 'Linux Libertine', 'Georgia', 'Times', serif;
+}
+.pricing-price {
+  margin: 0 0 0.75em;
+  line-height: 1.1;
+}
+.pricing-price-amount {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.pricing-price-period {
+  display: block;
+  margin-top: 0.15em;
+  font-size: 0.92em;
+  color: var(--text-secondary);
+}
+.pricing-price-equiv {
+  display: block;
+  margin-top: 0.35em;
+  font-size: 0.86em;
+  color: var(--text-secondary);
+}
+.pricing-description {
+  margin: 0 0 1em;
+  font-size: 0.95em;
+  color: var(--text-secondary);
+  min-height: 2.8em;
+}
+.pricing-features {
+  margin: 0 0 1.25em;
+  padding: 0;
+  list-style: none;
+  flex: 1;
+}
+.pricing-features li {
+  position: relative;
+  padding: 0.35em 0 0.35em 1.35em;
+  font-size: 0.93em;
+  line-height: 1.45;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+.pricing-features li:last-child {
+  border-bottom: none;
+}
+.pricing-features li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: var(--success-border, #14866d);
+  font-weight: 700;
+}
+#bodyContent a.pricing-cta {
+  display: block;
+  text-align: center;
+  padding: 0.65em 1em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-muted);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+#bodyContent a.pricing-cta:hover,
+#bodyContent a.pricing-cta:focus-visible {
+  background: var(--bg-btn-hover);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+#bodyContent a.pricing-cta-primary {
+  background: var(--text-link);
+  border-color: var(--text-link);
+  color: #fff;
+}
+#bodyContent a.pricing-cta-primary:hover,
+#bodyContent a.pricing-cta-primary:focus-visible {
+  filter: brightness(1.08);
+  background: var(--text-link);
+  border-color: var(--text-link);
+  color: #fff;
+  text-decoration: none;
+}
+.pricing-footer-note {
+  margin: 1.75em 0 0;
+  font-size: 0.9em;
+  color: var(--text-secondary);
+}
+
+.page-tools .mw-body-content > .infobox {
+  margin-top: 0;
+}
+.page-tools .tool-api-box {
+  clear: both;
+  margin-top: 1.5em;
 }
 
 pre.code {
@@ -2615,6 +2880,13 @@ body.wiki-dialog-open { overflow: hidden; }
     float: none;
     width: 100%;
     margin: 0 0 15px 0;
+  }
+  .pricing-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5em;
+  }
+  .pricing-card-featured {
+    order: -1;
   }
   .diff-columns {
     flex-direction: column;

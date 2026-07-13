@@ -17,7 +17,7 @@ Requirements:
 - Include specific examples, notable researchers, institutions, or technologies where relevant. Do not invent them.
 - Use analogies or explanations suitable for an educated general audience.
 - Maintain a neutral, encyclopedic tone. Avoid first person and opinion.
-- Add a brief "See also" section with 3-5 related topics.
+- Add a "See also" section with 3-5 related topics formatted as [[Related Topic]] (one per line, as a bullet list).
 - Total length should be roughly 800-1500 words.
 - Output only the article content in Markdown. Do not include a title line.
 

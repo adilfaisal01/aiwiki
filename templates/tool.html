@@ -2,6 +2,7 @@
 {% from "_macros.html" import api_code_panel, api_key_copy_button %}
 {% block title %}{{ article.title }} - AITools{% endblock %}
 {% block tool_body %}
+{{ content_html|safe }}
 <section class="tool-api-box" aria-labelledby="tool-api-heading">
   <h2 id="tool-api-heading">{{ _("tools.api.title") }}</h2>
   <p class="tool-api-lead">{{ _("tools.api.intro") }}</p>
@@ -26,15 +27,15 @@
       <code class="tool-api-url" id="tool-api-invoke-url">{{ tool_api.invoke_url }}</code>
       {{ api_key_copy_button("tool-api-invoke-url") }}
     </div>
+    {% if tool_server_execution %}
+    <p class="tool-api-hint">{{ _("tools.execute_notice_server") }}</p>
+    {% else %}
     <p class="tool-api-hint">{{ _("tools.execute_notice") }}</p>
+    {% endif %}
   </div>
 
   {{ api_code_panel(_("tools.api.curl_invoke_title"), tool_api.curl_invoke, "bash") }}
 </section>
-
-<div class="tool-article-body">
-{{ content_html|safe }}
-</div>
 {% endblock %}
 {% block tool_extra_scripts %}
 <script src="{{ static_url('copy_button.js') }}" nonce="{{ request.state.csp_nonce }}"></script>

@@ -1,5 +1,5 @@
 from agents.base import BaseAgent
-from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content
+from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content, detect_injection
 import random
 
 
@@ -35,6 +35,13 @@ class Critic(BaseAgent):
         content = article.get("content", "")
 
         if is_real_llm_enabled():
+            if detect_injection(content):
+                return {
+                    "action": "review",
+                    "message": f"**Review by {self.name}:**\n\n⚠️ This article appears to contain prompt injection attempts and was flagged by security. No review was performed.",
+                    "suggestions": ["Article flagged for security review"],
+                    "needs_revision": True,
+                }
             review = generate_text(REVIEW_PROMPT.format(topic=topic, content=wrap_content(content)))
             if review:
                 suggestions = [
@@ -55,7 +62,7 @@ class Critic(BaseAgent):
                     "needs_revision": needs_revision,
                 }
 
-        # Fallback simulated review
+        # Fallback review (used when LLM is unavailable or returns empty)
         suggestions = []
 
         if len(content) < 200:

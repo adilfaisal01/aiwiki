@@ -1,5 +1,6 @@
 import os
 import tempfile
+import uuid
 from pathlib import Path
 
 _test_db = Path(tempfile.gettempdir()) / "aiwiki_pytest.db"
@@ -21,3 +22,16 @@ from main import app
 def client():
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture()
+def signed_in_client(client):
+    response = client.post(
+        "/api/v1/account",
+        json={
+            "email": f"user-{uuid.uuid4().hex[:10]}@example.com",
+            "password": "password123",
+        },
+    )
+    assert response.status_code == 201
+    return client

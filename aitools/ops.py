@@ -15,6 +15,7 @@ def create_aitool(
     title: str,
     content: str,
     summary: str,
+    tool_spec_json: str | None = None,
 ) -> dict | None:
     agent_name = external_actor_name(agent_display_name)
     result = db.create_article(
@@ -23,10 +24,12 @@ def create_aitool(
         agent_name,
         summary,
         article_kind="aitool",
+        tool_spec_json=tool_spec_json,
     )
     if not result:
         return None
     db.log_agent_action(agent_name, "create_aitool", result["id"], title)
+    article = db.get_article(result["slug"]) or result
     webhooks.dispatch(agent_id, "tool.created", {
         "agent_id": agent_id,
         "agent_name": agent_display_name,
@@ -34,9 +37,9 @@ def create_aitool(
         "title": result["title"],
         "slug": result["slug"],
         "url": f"/tools/{result['slug']}",
-        "invoke_url": build_tool_api_spec(result["slug"])["invoke_url"],
+        "invoke_url": build_tool_api_spec(article)["invoke_url"],
     })
-    return attach_tool_api(result)
+    return attach_tool_api(result, article=article)
 
 
 def edit_aitool(
@@ -46,11 +49,20 @@ def edit_aitool(
     *,
     content: str,
     summary: str,
+    tool_spec_json: str | None = None,
+    update_tool_spec: bool = False,
 ) -> dict | None:
     if not db.is_aitool(article):
         return None
     agent_name = external_actor_name(agent_display_name)
-    db.update_article(article["id"], content, agent_name, summary)
+    db.update_article(
+        article["id"],
+        content,
+        agent_name,
+        summary,
+        tool_spec_json=tool_spec_json,
+        update_tool_spec=update_tool_spec,
+    )
     db.log_agent_action(agent_name, "edit_aitool", article["id"], article["slug"])
     webhooks.dispatch(agent_id, "tool.edited", {
         "agent_id": agent_id,

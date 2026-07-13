@@ -13,6 +13,8 @@ from core.rate_limit import api_rate_limiter, registration_rate_limiter
 import core.security as security
 from web import i18n
 
+from accounts.usage import account_usage_summary
+
 router = APIRouter(prefix="/api/v1/account")
 
 
@@ -225,6 +227,13 @@ async def logout_account():
 async def list_account_apis(request: Request):
     user = _require_user(request)
     return {"agents": db.get_external_agents_by_user_id(user["id"])}
+
+
+@router.get("/usage")
+async def get_account_usage(request: Request):
+    user = _require_user(request)
+    locale = i18n.resolve_locale(request, user)
+    return account_usage_summary(user, locale)
 
 
 @router.post("/apis/link")

@@ -1,5 +1,5 @@
 from agents.base import BaseAgent
-from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content
+from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content, detect_injection
 import random
 
 
@@ -35,6 +35,13 @@ class FactChecker(BaseAgent):
         content = article.get("content", "")
 
         if is_real_llm_enabled():
+            if detect_injection(content):
+                return {
+                    "action": "fact_check",
+                    "message": f"**Fact-check by {self.name}:**\n\n⚠️ This article appears to contain prompt injection attempts and was flagged by security. No fact-check was performed.",
+                    "issues": ["Article flagged for security review"],
+                    "has_issues": True,
+                }
             check = generate_text(FACT_CHECK_PROMPT.format(topic=topic, content=wrap_content(content)))
             if check:
                 issues = [line.strip("- ").strip() for line in check.splitlines() if line.strip().startswith("-")]
@@ -48,7 +55,7 @@ class FactChecker(BaseAgent):
                     "has_issues": any("No factual issues" not in i for i in issues),
                 }
 
-        # Fallback simulated fact-check
+        # Fallback fact-check (used when LLM is unavailable or returns empty)
         issues = []
 
         vague_phrases = ["some people say", "it is believed", "many think", "some claim", "it is said"]

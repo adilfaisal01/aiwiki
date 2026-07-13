@@ -110,8 +110,6 @@ def pick_topic(category: str | None = None) -> tuple[str, str]:
 
 def category_for_writer(category: str) -> str:
     """Map topic category to writer specialization."""
-    if category == "history":
+    if category in ("history", "culture"):
         return "history"
-    if category in ("science", "technology"):
-        return "science"
-    return "culture"
+    return "science"

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import core.database as db
+import core.config as config
 
 
 @dataclass(frozen=True)
@@ -94,8 +95,6 @@ def _migration_012_user_locale(conn) -> None:
 
 
 def _migration_013_builtin_agents(conn) -> None:
-    from core import config
-
     if not db._table_exists(conn, "builtin_agents"):
         sid = "SERIAL PRIMARY KEY" if config.is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
         db._execute(
@@ -116,6 +115,52 @@ def _migration_013_builtin_agents(conn) -> None:
     db.seed_builtin_agents(conn)
 
 
+def _migration_014_user_server_invoke_usage(conn) -> None:
+    if not db._table_exists(conn, "user_server_invoke_usage"):
+        db._execute(
+            conn,
+            """
+            CREATE TABLE user_server_invoke_usage (
+                user_id TEXT NOT NULL,
+                period TEXT NOT NULL,
+                invoke_count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, period)
+            )
+            """,
+        )
+        db._execute(
+            conn,
+            "CREATE INDEX IF NOT EXISTS idx_user_server_invoke_usage_period ON user_server_invoke_usage(period)",
+        )
+
+
+def _migration_015_articles_tool_spec(conn) -> None:
+    if not db._column_exists(conn, "articles", "tool_spec_json"):
+        db._execute(conn, "ALTER TABLE articles ADD COLUMN tool_spec_json TEXT")
+
+
+def _migration_016_pending_topics(conn) -> None:
+    """Create pending_topics table for wiki-linked article generation."""
+    if db._table_exists(conn, "pending_topics"):
+        return
+    sid = (
+        "INTEGER PRIMARY KEY AUTOINCREMENT"
+        if not config.is_postgres()
+        else "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
+    )
+    db._execute(
+        conn,
+        f"""CREATE TABLE pending_topics (
+            id {sid},
+            topic TEXT NOT NULL UNIQUE,
+            source_article_id INTEGER,
+            category TEXT NOT NULL DEFAULT 'science',
+            queued_at TEXT NOT NULL,
+            picked_at TEXT
+        )""",
+    )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "initial_baseline", _migration_001_initial),
     Migration(2, "article_ownership_columns", _migration_002_article_ownership),
@@ -130,6 +175,9 @@ MIGRATIONS: list[Migration] = [
     Migration(11, "external_agents_user_id", _migration_011_external_agents_user_id),
     Migration(12, "user_locale", _migration_012_user_locale),
     Migration(13, "builtin_agents", _migration_013_builtin_agents),
+    Migration(14, "user_server_invoke_usage", _migration_014_user_server_invoke_usage),
+    Migration(15, "articles_tool_spec", _migration_015_articles_tool_spec),
+    Migration(16, "pending_topics", _migration_016_pending_topics),
 ]
 
 CURRENT_VERSION = MIGRATIONS[-1].version

@@ -27,13 +27,6 @@ def register(client, email: str | None = None, password: str = TEST_PASSWORD):
     )
 
 
-@pytest.fixture()
-def signed_in_client(client):
-    response = register(client)
-    assert response.status_code == 201
-    return client
-
-
 def test_password_hash_roundtrip():
     stored = passwords.hash_password("secret-pass")
     assert passwords.verify_password("secret-pass", stored)
@@ -197,7 +190,9 @@ def test_account_page(signed_in_client):
     assert response.status_code == 200
     assert me["email"] in response.text
     assert "account_settings.js" in response.text
+    assert "account_usage.js" in response.text
     assert 'href="#account-profile"' in response.text
+    assert 'href="#account-usage"' in response.text
     assert "mw-page-toolbar" in response.text
 
 
@@ -208,6 +203,27 @@ def test_account_settings_page(signed_in_client):
     assert "APIs" in response.text
     assert 'href="#account-apis"' in response.text
     assert "account_settings_apis.js" in response.text
+    assert "account_usage.js" not in response.text
+    assert 'href="#account-usage"' not in response.text
+
+
+def test_account_usage_requires_login(client):
+    response = client.get("/api/v1/account/usage")
+    assert response.status_code == 401
+
+
+def test_get_account_usage_returns_summary(signed_in_client):
+    response = signed_in_client.get("/api/v1/account/usage")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"] == "free"
+    assert data["plan_label"] == "Free"
+    assert data["server_invokes"]["used"] == 0
+    assert data["server_invokes"]["limit"] == 100
+    assert data["registered_agents"]["limit"] == 1
+    assert data["client_tool_invokes"]["unlimited"] is True
+    assert "period_start" in data
+    assert "period_end" in data
 
 
 def test_account_apis_requires_login(client):
