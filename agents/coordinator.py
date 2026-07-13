@@ -130,13 +130,13 @@ class Coordinator(BaseAgent):
             word_count = len(full["content"].split())
             section_count = full["content"].count("## ")
 
-            # Skip articles Quinn already improved recently (within last hour)
+            # Skip articles Quinn already improved recently (within last 10 min)
             from datetime import datetime, timezone
             updated = full.get("updated_at", "")
             if updated:
                 try:
                     updated_dt = datetime.fromisoformat(updated)
-                    if (datetime.now(timezone.utc) - updated_dt).total_seconds() < 3600:
+                    if (datetime.now(timezone.utc) - updated_dt).total_seconds() < 600:
                         continue
                 except (ValueError, TypeError):
                     pass
