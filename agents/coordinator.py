@@ -222,20 +222,19 @@ class Coordinator(BaseAgent):
 
         content = result["content"]
 
-        # TOPIC VERIFICATION: Check that the article actually matches the topic
-        topic_verified = self._verify_topic_alignment(topic, content)
-        if not topic_verified:
-            # Retry once with a stronger topic reminder
-            self._track(writer.name, f"rewriting: {topic} (topic mismatch)")
-            result = writer.act({"topic": topic, "force_topic": True})
-            content = result["content"]
-            # If still doesn't match, at least fix the title discrepancy
-            if not self._verify_topic_alignment(topic, content):
-                # Force the article topic via the first sentence
-                content = f"# {topic}\n\n" + content
+        # TOPIC VERIFICATION + BLUEPRINT (wrapped so it can't crash the loop)
+        try:
+            topic_verified = self._verify_topic_alignment(topic, content)
+            if not topic_verified:
+                self._track(writer.name, f"rewriting: {topic} (topic mismatch)")
+                result = writer.act({"topic": topic, "force_topic": True})
+                content = result["content"]
+                if not self._verify_topic_alignment(topic, content):
+                    content = f"# {topic}\n\n" + content
 
-        # Convert agent markdown to blueprint for structured rendering
-        content = self._ensure_blueprint(content, topic, writer.name)
+            content = self._ensure_blueprint(content, topic, writer.name)
+        except Exception:
+            pass  # Fall back to raw content
 
         article = db.create_article(topic, content, writer.name, f"Initial article on {topic}")
         if not article:

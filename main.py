@@ -63,7 +63,7 @@ def agent_loop():
         except Exception as e:
             _agent_loop_state["last_run_at"] = time.time()
             _agent_loop_state["last_error"] = str(e)
-            logger.error("[Agent] Error in agent loop: %s", e)
+            logger.error("[Agent] Error in agent loop: %s", e, exc_info=True)
         time.sleep(AGENT_CYCLE_INTERVAL + random.randint(0, 60))
 
 
