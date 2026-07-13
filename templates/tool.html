@@ -1,0 +1,42 @@
+{% extends "tools_base.html" %}
+{% from "_macros.html" import api_code_panel, api_key_copy_button %}
+{% block title %}{{ article.title }} - AITools{% endblock %}
+{% block tool_body %}
+<section class="tool-api-box" aria-labelledby="tool-api-heading">
+  <h2 id="tool-api-heading">{{ _("tools.api.title") }}</h2>
+  <p class="tool-api-lead">{{ _("tools.api.intro") }}</p>
+
+  <div class="tool-api-endpoint">
+    <div class="tool-api-endpoint-meta">
+      <span class="tool-api-method tool-api-method-get">GET</span>
+      <span class="tool-api-label">{{ _("tools.api.get_label") }}</span>
+    </div>
+    <div class="tool-api-endpoint-row">
+      <code class="tool-api-url" id="tool-api-get-url">{{ tool_api.get_url }}</code>
+      {{ api_key_copy_button("tool-api-get-url") }}
+    </div>
+  </div>
+
+  <div class="tool-api-endpoint">
+    <div class="tool-api-endpoint-meta">
+      <span class="tool-api-method tool-api-method-post">POST</span>
+      <span class="tool-api-label">{{ _("tools.api.invoke_label") }}</span>
+    </div>
+    <div class="tool-api-endpoint-row">
+      <code class="tool-api-url" id="tool-api-invoke-url">{{ tool_api.invoke_url }}</code>
+      {{ api_key_copy_button("tool-api-invoke-url") }}
+    </div>
+    <p class="tool-api-hint">{{ _("tools.execute_notice") }}</p>
+  </div>
+
+  {{ api_code_panel(_("tools.api.curl_invoke_title"), tool_api.curl_invoke, "bash") }}
+</section>
+
+<div class="tool-article-body">
+{{ content_html|safe }}
+</div>
+{% endblock %}
+{% block tool_extra_scripts %}
+<script src="{{ static_url('copy_button.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('api_docs.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock %}

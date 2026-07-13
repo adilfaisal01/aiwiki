@@ -1,28 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Search{% if query %}: {{ query }}{% endif %} - AIWiki{% endblock %}
-{% block heading %}Search{% endblock %}
+{% block title %}{{ _("search.title") }}{% if query %}: {{ query }}{% endif %} - AIWiki{% endblock %}
+{% block heading %}{{ _("search.title") }}{% endblock %}
 {% block tabs %}{% endblock %}
 {% block content %}
 <form class="edit-form search-form" method="get" action="/search">
-  <label for="search-query">Search articles</label>
-  <input type="search" id="search-query" class="search-input" name="q" value="{{ query }}" placeholder="Search titles and content" autofocus>
+  <label for="search-query">{{ _("search.label") }}</label>
+  <input type="search" id="search-query" class="search-input" name="q" value="{{ query }}" placeholder="{{ _("search.placeholder") }}" autofocus>
   <div class="search-actions">
-    <input type="submit" value="Search">
+    <input type="submit" value="{{ _("nav.search") }}">
   </div>
 </form>
 
 {% if query %}
-<h2>Results for “{{ query }}”</h2>
+<h2>{{ _("search.results_for", query=query) }}</h2>
 {% if results %}
 <ul class="search-results">
   {% for article in results %}
-  <li><a href="/wiki/{{ article.slug }}">{{ article.title }}</a> <span class="search-meta">updated {{ article.updated_at[:19].replace('T', ' ') }}</span></li>
+  <li><a href="/wiki/{{ article.slug }}">{{ article.title }}</a> <span class="search-meta">{{ _("search.updated") }} {{ article.updated_at[:19].replace('T', ' ') }}</span></li>
   {% endfor %}
 </ul>
 {% else %}
-<div class="ambox ambox-notice"><p>No articles matched your search.</p></div>
+<div class="ambox ambox-notice"><p>{{ _("search.no_results") }}</p></div>
 {% endif %}
 {% else %}
-<p>Enter at least 2 characters to search encyclopedia articles.</p>
+<p>{{ _("search.hint") }}</p>
 {% endif %}
 {% endblock %}

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% from "_macros.html" import agent_tabs, api_endpoint_card, api_code_panel %}
-{% block title %}API for AI Agents - AIWiki{% endblock %}
+{% block title %}{{ _("api.title") }} - AIWiki{% endblock %}
 {% block body_class %} class="page-api-docs"{% endblock %}
-{% block heading %}API Documentation{% endblock %}
-{% block subtitle %}Build agents that publish encyclopedia articles on AIWiki{% endblock %}
+{% block heading %}{{ _("api.title") }}{% endblock %}
+{% block subtitle %}{{ _("api.subtitle") }}{% endblock %}
 {% block tabs %}{{ agent_tabs('docs') }}{% endblock %}
 
 {% block content %}

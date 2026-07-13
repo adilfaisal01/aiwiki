@@ -3,6 +3,10 @@
   var API_BASE = "/manage-agents";
   var overviewEditorApiKey = null;
 
+  function t(key, vars) {
+    return Aiwiki && Aiwiki.t ? Aiwiki.t(key, vars) : key;
+  }
+
   function showAlert(message, type) {
     var el = document.getElementById("agent-alert");
     el.innerHTML = "<p>" + Aiwiki.escapeHtml(message) + "</p>";
@@ -38,10 +42,10 @@
     var editor = document.getElementById("overview-editor");
     var errorEl = document.getElementById("overview-edit-error");
     errorEl.hidden = true;
-    document.getElementById("overview-editor-title").textContent = "Edit overview: " + agent.name;
+    document.getElementById("overview-editor-title").textContent = t("manage.edit_overview_title", { name: agent.name });
     editor.hidden = false;
-    document.getElementById("overview-content").value = "Loading…";
-    document.getElementById("overview-summary").value = "Updated agent overview";
+    document.getElementById("overview-content").value = t("manage.loading");
+    document.getElementById("overview-summary").value = t("manage.default_summary");
     editor.scrollIntoView({ behavior: "smooth", block: "start" });
 
     Aiwiki.postJson(API_BASE + "/overview/get", { api_key: agent.api_key })
@@ -57,15 +61,15 @@
   function presenceCell(agent) {
     var setting = agent.presence_setting || "auto";
     var presence = agent.presence || "offline";
-    var label = agent.presence_label || presence;
+    var label = t("agent.presence." + presence);
     return (
       '<div class="presence-manager">' +
         '<span class="agent-indicator ' + Aiwiki.escapeHtml(presence) + '" title="' + Aiwiki.escapeHtml(label) + '"></span>' +
-        '<select class="presence-select" aria-label="Online status for ' + Aiwiki.escapeHtml(agent.name) + '">' +
-          '<option value="auto"' + (setting === "auto" ? " selected" : "") + '>Auto</option>' +
-          '<option value="active"' + (setting === "active" ? " selected" : "") + '>Active</option>' +
-          '<option value="afk"' + (setting === "afk" ? " selected" : "") + '>AFK</option>' +
-          '<option value="offline"' + (setting === "offline" ? " selected" : "") + '>Offline</option>' +
+        '<select class="presence-select" aria-label="' + Aiwiki.escapeHtml(agent.name) + '">' +
+          '<option value="auto"' + (setting === "auto" ? " selected" : "") + ">" + Aiwiki.escapeHtml(t("manage.presence_auto")) + "</option>" +
+          '<option value="active"' + (setting === "active" ? " selected" : "") + ">" + Aiwiki.escapeHtml(t("agent.presence.active")) + "</option>" +
+          '<option value="afk"' + (setting === "afk" ? " selected" : "") + ">" + Aiwiki.escapeHtml(t("agent.presence.afk")) + "</option>" +
+          '<option value="offline"' + (setting === "offline" ? " selected" : "") + ">" + Aiwiki.escapeHtml(t("agent.presence.offline")) + "</option>" +
         "</select>" +
       "</div>"
     );
@@ -75,7 +79,7 @@
     select.addEventListener("change", function () {
       Aiwiki.postJson(API_BASE + "/presence", { api_key: agent.api_key, status: select.value })
         .then(function () {
-          showAlert("Online status updated.", "success");
+          showAlert(t("manage.presence_updated"), "success");
           loadList();
         })
         .catch(function (e) { showAlert(e.message, "error"); loadList(); });
@@ -88,19 +92,19 @@
 
     if (!agent.valid) {
       row.innerHTML =
-        "<td><i>Unknown agent</i></td>" +
+        "<td><i>" + Aiwiki.escapeHtml(t("manage.unknown_agent")) + "</i></td>" +
         "<td>—</td>" +
         "<td><code>" + Aiwiki.escapeHtml(agent.masked_key || "****") + "</code></td>" +
-        "<td><i>Invalid</i></td>" +
+        "<td><i>" + Aiwiki.escapeHtml(t("manage.invalid")) + "</i></td>" +
         "<td>—</td>" +
         "<td>—</td>" +
-        '<td class="actions"><a href="#" class="action-delete">Delete</a></td>';
+        '<td class="actions"><a href="#" class="action-delete">' + Aiwiki.escapeHtml(t("manage.delete")) + "</a></td>";
       bindAction(row.querySelector(".action-delete"), function () {
         wikiConfirm({
-          title: "Remove agent",
-          message: "Remove this invalid entry and its API key from this browser?",
-          confirmLabel: "Remove",
-          cancelLabel: "Cancel",
+          title: t("manage.remove_agent_title"),
+          message: t("manage.remove_agent_message"),
+          confirmLabel: t("manage.remove"),
+          cancelLabel: t("dialog.cancel"),
           variant: "notice",
         }).then(function (ok) {
           if (!ok) return;
@@ -111,12 +115,12 @@
       return row;
     }
 
-    var statusLabel = agent.is_active ? "Active" : "Inactive";
+    var statusLabel = agent.is_active ? t("manage.active_account") : t("manage.inactive_account");
     var overviewCell = "—";
     if (agent.overview_url) {
       overviewCell =
-        '<a href="' + Aiwiki.escapeHtml(agent.overview_url) + '">View</a> · ' +
-        '<a href="#" class="action-overview-edit">Edit overview</a>';
+        '<a href="' + Aiwiki.escapeHtml(agent.overview_url) + '">' + Aiwiki.escapeHtml(t("manage.view")) + "</a> · " +
+        '<a href="#" class="action-overview-edit">' + Aiwiki.escapeHtml(t("manage.edit_overview")) + "</a>";
     }
 
     row.innerHTML =
@@ -127,9 +131,9 @@
       "<td>" + presenceCell(agent) + "</td>" +
       "<td>" + Aiwiki.escapeHtml(formatDate(agent.created_at)) + "</td>" +
       '<td class="actions">' +
-        '<a href="#" class="action-edit">Edit name</a> · ' +
-        '<a href="#" class="action-refresh">Refresh</a> · ' +
-        '<a href="#" class="action-delete">Delete</a>' +
+        '<a href="#" class="action-edit">' + Aiwiki.escapeHtml(t("manage.edit_name")) + "</a> · " +
+        '<a href="#" class="action-refresh">' + Aiwiki.escapeHtml(t("manage.refresh")) + "</a> · " +
+        '<a href="#" class="action-delete">' + Aiwiki.escapeHtml(t("manage.delete")) + "</a>" +
       "</td>";
 
     bindPresenceSelect(row.querySelector(".presence-select"), agent);
@@ -141,22 +145,22 @@
 
     bindAction(row.querySelector(".action-edit"), function () {
       wikiPrompt({
-        title: "Edit agent",
-        message: "Enter a new name for this agent.",
+        title: t("manage.edit_agent_title"),
+        message: t("manage.edit_agent_message"),
         value: agent.name,
-        confirmLabel: "Save",
-        cancelLabel: "Cancel",
+        confirmLabel: t("manage.save"),
+        cancelLabel: t("dialog.cancel"),
       }).then(function (newName) {
         if (!newName) return;
         newName = newName.trim();
         if (newName.length < 2) {
-          showAlert("Agent name must be at least 2 characters.", "error");
+          showAlert(t("manage.name_too_short"), "error");
           return;
         }
         if (newName === agent.name) return;
         Aiwiki.postJson(API_BASE + "/rename", { api_key: agent.api_key, name: newName })
           .then(function () {
-            showAlert("Agent renamed successfully.", "success");
+            showAlert(t("manage.renamed"), "success");
             loadList();
           })
           .catch(function (e) { showAlert(e.message, "error"); });
@@ -165,10 +169,10 @@
 
     bindAction(row.querySelector(".action-refresh"), function () {
       wikiConfirm({
-        title: "Refresh API key",
-        message: "Regenerate the API key for " + agent.name + "? The current key will stop working immediately.",
-        confirmLabel: "Refresh key",
-        cancelLabel: "Cancel",
+        title: t("manage.refresh_key_title"),
+        message: t("manage.refresh_key_message", { name: agent.name }),
+        confirmLabel: t("manage.refresh_key_confirm"),
+        cancelLabel: t("dialog.cancel"),
         variant: "warning",
       }).then(function (ok) {
         if (!ok) return;
@@ -184,17 +188,17 @@
 
     bindAction(row.querySelector(".action-delete"), function () {
       wikiConfirm({
-        title: "Delete agent",
-        message: "Delete " + agent.name + " permanently? This removes the agent and its API key. The name can be registered again.",
-        confirmLabel: "Delete agent",
-        cancelLabel: "Cancel",
+        title: t("manage.delete_agent_title"),
+        message: t("manage.delete_agent_message", { name: agent.name }),
+        confirmLabel: t("manage.delete_agent_confirm"),
+        cancelLabel: t("dialog.cancel"),
         variant: "warning",
       }).then(function (ok) {
         if (!ok) return;
         Aiwiki.postJson(API_BASE + "/delete", { api_key: agent.api_key })
           .then(function () {
             Aiwiki.removeApiKey(agent.api_key);
-            showAlert("Agent and API key deleted.", "success");
+            showAlert(t("manage.deleted"), "success");
             loadList();
           })
           .catch(function (e) { showAlert(e.message, "error"); });
@@ -248,7 +252,7 @@
     if (!apiKey) return;
 
     if (Aiwiki.getApiKeys().indexOf(apiKey) !== -1) {
-      errorEl.innerHTML = "<p>This agent is already in your list.</p>";
+      errorEl.innerHTML = "<p>" + Aiwiki.escapeHtml(t("manage.agent_already_listed")) + "</p>";
       errorEl.hidden = false;
       return;
     }
@@ -258,7 +262,7 @@
         Aiwiki.addApiKey(apiKey);
         input.value = "";
         loadList();
-        showAlert("Agent added to your list.", "success");
+        showAlert(t("manage.added_to_list"), "success");
       })
       .catch(function (err) {
         errorEl.innerHTML = "<p>" + Aiwiki.escapeHtml(err.message) + "</p>";
@@ -273,7 +277,7 @@
     errorEl.hidden = true;
     var content = document.getElementById("overview-content").value;
     var summary = document.getElementById("overview-summary").value.trim();
-    if (!summary) summary = "Updated agent overview";
+    if (!summary) summary = t("manage.default_summary");
 
     Aiwiki.postJson(API_BASE + "/overview/update", {
       api_key: overviewEditorApiKey,
@@ -282,7 +286,7 @@
     })
       .then(function () {
         closeOverviewEditor();
-        showAlert("Overview saved.", "success");
+        showAlert(t("manage.overview_saved"), "success");
       })
       .catch(function (err) {
         errorEl.innerHTML = "<p>" + Aiwiki.escapeHtml(err.message) + "</p>";

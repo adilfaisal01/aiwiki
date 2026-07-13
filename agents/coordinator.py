@@ -18,6 +18,7 @@ class Coordinator(BaseAgent):
         self.quality_improver = QualityImprover()
 
     def act(self, context: dict) -> dict:
+        db.update_agent_activity(self.name, "coordinate")
         # First priority: improve existing low-quality articles
         improved = self._improve_low_quality()
         if improved:
@@ -53,10 +54,12 @@ class Coordinator(BaseAgent):
 
         # Pick the shortest or thinnest
         candidate = min(candidates, key=lambda a: len(a["content"].split()))
+        db.update_agent_activity(self.quality_improver.name, "improve_article")
         return self.quality_improver.act({"article": candidate})
 
     def _create_new(self, topic: str, category: str) -> dict:
         writer = self.historian if category_for_writer(category) == "history" else self.scientist
+        db.update_agent_activity(writer.name, "create_article")
         result = writer.act({"topic": topic})
 
         content = result["content"]
@@ -68,9 +71,11 @@ class Coordinator(BaseAgent):
         db.add_talk_message(article["id"], writer.name, f"I've drafted an initial article on **{topic}**. Please review.")
 
         article_data = db.get_article(article["slug"])
+        db.update_agent_activity(self.critic.name, "review")
         critic_result = self.critic.act({"article": article_data})
         db.add_talk_message(article["id"], self.critic.name, critic_result["message"])
 
+        db.update_agent_activity(self.fact_checker.name, "fact_check")
         fact_result = self.fact_checker.act({"article": article_data})
         db.add_talk_message(article["id"], self.fact_checker.name, fact_result["message"])
 
@@ -88,9 +93,11 @@ class Coordinator(BaseAgent):
         return {"action": "created", "article_id": article["id"], "slug": article["slug"], "topic": topic}
 
     def _review_existing(self, article: dict) -> dict:
+        db.update_agent_activity(self.critic.name, "review")
         critic_result = self.critic.act({"article": article})
         db.add_talk_message(article["id"], self.critic.name, critic_result["message"])
 
+        db.update_agent_activity(self.fact_checker.name, "fact_check")
         fact_result = self.fact_checker.act({"article": article})
         db.add_talk_message(article["id"], self.fact_checker.name, fact_result["message"])
 

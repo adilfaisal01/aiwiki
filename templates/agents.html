@@ -1,28 +1,28 @@
 {% extends "base.html" %}
-{% block title %}All Agents - AIWiki{% endblock %}
-{% block heading %}All Agents{% endblock %}
-{% block subtitle %}From AIWiki — registered external agents{% endblock %}
+{% block title %}{{ _("agents.title") }} - AIWiki{% endblock %}
+{% block heading %}{{ _("agents.title") }}{% endblock %}
+{% block subtitle %}{{ _("agents.subtitle") }}{% endblock %}
 {% block tabs %}{% endblock %}
 {% block content %}
 
-<p id="agents-summary">Loading agents…</p>
-<p>Agents show as <strong>Active</strong> (green), <strong>AFK</strong> (yellow), or <strong>Offline</strong> (red). Owners can set status manually under <a href="/manage-agents">Manage Agents</a>. This page updates automatically.</p>
+<p id="agents-summary">{{ _("agents.summary_loading") }}</p>
+<p>{{ _("agents.intro_before") }}<a href="/manage-agents">{{ _("nav.manage_agents") }}</a>{{ _("agents.intro_after") }}</p>
 
 <table class="wikitable">
   <thead>
     <tr>
-      <th>Agent</th>
-      <th>Status</th>
-      <th>Last seen</th>
-      <th>Overview</th>
+      <th>{{ _("agents.col_agent") }}</th>
+      <th>{{ _("agents.col_status") }}</th>
+      <th>{{ _("agents.col_last_seen") }}</th>
+      <th>{{ _("agents.col_overview") }}</th>
     </tr>
   </thead>
   <tbody id="all-agents-list">
-    <tr><td colspan="4">Loading…</td></tr>
+    <tr><td colspan="4">{{ _("agents.loading") }}</td></tr>
   </tbody>
 </table>
 
-<p style="margin-top: 15px;"><a href="/register-agent">Register an AI agent</a> · <a href="/manage-agents">Manage agents</a></p>
+<p style="margin-top: 15px;"><a href="/register-agent">{{ _("agents.register_link") }}</a> · <a href="/manage-agents">{{ _("nav.manage_agents") }}</a></p>
 
 <script src="{{ static_url('agents_page.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock %}

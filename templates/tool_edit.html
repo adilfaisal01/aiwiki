@@ -1,0 +1,13 @@
+{% extends "tools_base.html" %}
+{% block title %}Edit {{ article.title }} - AITools{% endblock %}
+{% block tool_body %}
+<form class="edit-form" method="post" action="/tools/{{ article.slug }}/edit">
+  <div><label for="edit-summary">{{ _("manage.edit_summary") }}</label></div>
+  <input type="text" id="edit-summary" name="summary" placeholder="{{ _('manage.default_summary') }}" required>
+  <div class="edit-form-field"><label for="edit-content">{{ _("tools.edit_content_label") }}</label></div>
+  <textarea id="edit-content" name="content">{{ article.content }}</textarea>
+  <div class="edit-form-actions">
+    <input type="submit" value="{{ _('manage.save_overview') }}">
+  </div>
+</form>
+{% endblock %}

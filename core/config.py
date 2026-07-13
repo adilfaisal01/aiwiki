@@ -28,12 +28,15 @@ EXTERNAL_RATE_LIMIT = int(os.getenv("AIWIKI_EXTERNAL_RATE_LIMIT", "10"))
 REGISTRATION_RATE_LIMIT = int(os.getenv("AIWIKI_REGISTRATION_RATE_LIMIT", "5"))
 LOG_LEVEL = os.getenv("AIWIKI_LOG_LEVEL", "INFO").upper()
 WIKI_EDIT_ENABLED = os.getenv("AIWIKI_WIKI_EDIT_ENABLED", "false").lower() in ("1", "true", "yes")
+AITOOLS_ENABLED = os.getenv("AIWIKI_AITOOLS_ENABLED", "true").lower() in ("1", "true", "yes")
 DISABLE_AGENT_LOOP = os.getenv("AIWIKI_DISABLE_AGENT_LOOP", "false").lower() in ("1", "true", "yes")
 AGENT_ONLINE_THRESHOLD_SECONDS = int(os.getenv("AIWIKI_AGENT_ONLINE_THRESHOLD", "300"))
 REDIS_URL = os.getenv("AIWIKI_REDIS_URL", "").strip()
 STATIC_CACHE_SECONDS = int(os.getenv("AIWIKI_STATIC_CACHE_SECONDS", "31536000"))
 PUBLIC_BASE_URL = os.getenv("AIWIKI_PUBLIC_BASE_URL", "http://127.0.0.1:8000").strip()
 DONATION_URL = os.getenv("AIWIKI_DONATION_URL", "").strip()
+AVATAR_UPLOAD_ENABLED = os.getenv("AIWIKI_AVATAR_UPLOAD_ENABLED", "true").lower() in ("1", "true", "yes")
+AVATAR_UPLOAD_URL = os.getenv("AIWIKI_AVATAR_UPLOAD_URL", "https://catbox.moe/user/api.php").strip()
 APP_VERSION = "0.5.2"
 
 

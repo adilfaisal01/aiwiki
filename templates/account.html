@@ -1,0 +1,67 @@
+{% extends "account_base.html" %}
+{% from "_macros.html" import api_key_copy_button %}
+{% block title %}{{ _("account.page.title") }} - AIWiki{% endblock %}
+{% block heading %}{{ _("account.page.title") }}{% endblock %}
+{% block subtitle %}{{ _("account.page.subtitle") }}{% endblock %}
+{% block account_body %}
+<div class="account-page" id="account-settings" data-user-id="{{ user.id }}" data-avatar-upload-enabled="{{ 'true' if avatar_upload_enabled else 'false' }}">
+  <section class="account-page-section" id="account-profile">
+    <div class="account-profile-header">
+      <div class="account-page-avatar-preview" id="account-avatar-preview">
+        {% if user.avatar_url %}
+        <img class="account-page-avatar-img" id="account-avatar-preview-img" src="{{ user.avatar_url }}" alt="{{ _('account.page.avatar_preview_alt') }}" width="88" height="88">
+        {% else %}
+        <span class="account-page-avatar-initials" id="account-avatar-preview-initials" style="background:hsl({{ account_initials_hue(user.id) }} 45% 42%)">{{ user.id.replace('-', '')[:2]|upper }}</span>
+        {% endif %}
+      </div>
+      <div class="account-profile-summary">
+        <p class="account-profile-label">{{ _("account.page.email") }}</p>
+        <p class="account-profile-email">{{ user.email or "—" }}</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="account-page-divider" role="separator"></div>
+
+  <section class="account-page-section" id="account-avatar">
+    <h2 class="account-page-heading">{{ _("account.page.avatar") }}</h2>
+    <div class="account-page-field">
+      <label for="account-avatar-url">{{ _("account.page.image_link") }}</label>
+      <input type="url" class="account-page-input" id="account-avatar-url" placeholder="https://example.com/avatar.png" value="{{ user.avatar_url or '' }}">
+    </div>
+    <button type="button" class="wiki-dialog-btn wiki-dialog-btn-primary" id="account-avatar-save-url">{{ _("account.page.save_link") }}</button>
+    {% if avatar_upload_enabled %}
+    <div class="account-page-field">
+      <label for="account-avatar-file">{{ _("account.page.upload_image") }}</label>
+      <input type="file" class="account-page-input" id="account-avatar-file" accept="image/jpeg,image/png,image/gif,image/webp">
+    </div>
+    <p class="account-page-hint">{{ _("account.page.upload_hint_enabled") }}</p>
+    {% else %}
+    <p class="account-page-hint">{{ _("account.page.upload_hint_disabled") }}</p>
+    {% endif %}
+    {% if user.avatar_url %}
+    <button type="button" class="wiki-dialog-btn" id="account-avatar-remove">{{ _("account.page.remove_avatar") }}</button>
+    {% endif %}
+  </section>
+
+  <div class="account-page-divider" role="separator"></div>
+
+  <section class="account-page-section" id="account-id">
+    <h2 class="account-page-heading">{{ _("account.page.account_id") }}</h2>
+    <p>{{ _("account.page.account_id_help") }}</p>
+    <div class="api-key-field">
+      <pre class="code api-key-value" id="account-id-display">{{ user.id }}</pre>
+      {{ api_key_copy_button('account-id-display') }}
+    </div>
+  </section>
+
+  <div class="account-page-divider" role="separator"></div>
+
+  <section class="account-page-section account-page-actions" id="account-signout">
+    <button type="button" class="wiki-dialog-btn" id="account-logout-btn">{{ _("account.page.sign_out") }}</button>
+  </section>
+</div>
+{% endblock %}
+{% block account_extra_scripts %}
+<script src="{{ static_url('account_settings.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock %}

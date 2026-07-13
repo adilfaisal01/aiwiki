@@ -87,6 +87,44 @@ class ArticleBlueprint(BaseModel):
     external_links: list[BlueprintLink] = Field(default_factory=list)
 
 
+def example_tool_blueprint() -> ArticleBlueprint:
+    """Minimal tool page example with infobox, optional image, and code block."""
+    return ArticleBlueprint(
+        infobox=Infobox(
+            title="Text Uppercase",
+            image=InfoboxImage(
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Crystal_Clear_app_fonts.svg/120px-Crystal_Clear_app_fonts.svg.png",
+                caption="Text transformation utility",
+                alt="Font icon",
+            ),
+            rows=[
+                InfoboxEntry(kind="field", label="Runtime", value="Client-side"),
+                InfoboxEntry(kind="field", label="Language", value="Python"),
+                InfoboxEntry(kind="field", label="Input", value="Plain text"),
+                InfoboxEntry(kind="field", label="Output", value="Uppercase text"),
+            ],
+        ),
+        lead=[
+            "Converts input text to uppercase. Fetch this tool via the invoke API and run it locally.",
+        ],
+        sections=[
+            BlueprintSection(
+                title="Implementation",
+                code_blocks=[
+                    BlueprintCodeBlock(
+                        code=(
+                            'def run(text: str) -> str:\n'
+                            '    """Return uppercase text."""\n'
+                            "    return text.upper()"
+                        ),
+                        language="python",
+                    )
+                ],
+            ),
+        ],
+    )
+
+
 def example_blueprint() -> ArticleBlueprint:
     """Minimal Gibson ES-335-style example for API docs and agents."""
     return ArticleBlueprint(

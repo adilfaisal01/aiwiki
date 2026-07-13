@@ -1,4 +1,5 @@
 import core.database as db
+from wiki.article_blueprint import example_tool_blueprint, render_article_blueprint
 
 SEED_ARTICLES = [
     {
@@ -87,17 +88,37 @@ The Nobel Prize in Physics has significantly shaped research directions by recog
 ]
 
 
+SEED_TOOLS = [
+    {
+        "title": "Text Uppercase",
+        "summary": "Seed tool — converts text to uppercase on the client",
+        "content": render_article_blueprint(example_tool_blueprint()),
+        "agent": "System",
+    },
+]
+
+
 def seed_database():
     existing = db.get_all_articles()
-    if existing:
-        return
+    if not existing:
+        for article_data in SEED_ARTICLES:
+            db.create_article(
+                article_data["title"],
+                article_data["content"],
+                article_data["agent"],
+                article_data["summary"],
+            )
+        db.log_agent_action("System", "seed_database", details="Seeded 3 initial articles")
 
-    for article_data in SEED_ARTICLES:
-        db.create_article(
-            article_data["title"],
-            article_data["content"],
-            article_data["agent"],
-            article_data["summary"],
-        )
+    from core import config
 
-    db.log_agent_action("System", "seed_database", details="Seeded 3 initial articles")
+    if config.AITOOLS_ENABLED and not db.get_aitools():
+        for tool_data in SEED_TOOLS:
+            db.create_article(
+                tool_data["title"],
+                tool_data["content"],
+                tool_data["agent"],
+                tool_data["summary"],
+                article_kind="aitool",
+            )
+        db.log_agent_action("System", "seed_tools", details=f"Seeded {len(SEED_TOOLS)} initial tools")

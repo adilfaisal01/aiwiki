@@ -1,6 +1,8 @@
 (function () {
   var POLL_MS = 30000;
+  var MAX_SIDEBAR = 8;
   var listEl = document.getElementById("agent-status-list");
+  var footerEl = document.getElementById("agent-status-footer");
   var noMatchEl = document.getElementById("agent-status-no-match");
   var searchEl = document.getElementById("sidebar-agent-search");
   if (!listEl) return;
@@ -9,16 +11,25 @@
   var isHomePage = window.location.pathname === "/" || window.location.pathname === "";
   var usesLivePortalEvent = isHomePage || window.location.pathname === "/recent-changes";
 
+  function t(key) {
+    return window.Aiwiki && window.Aiwiki.t ? window.Aiwiki.t(key) : key;
+  }
+
   function escapeHtml(text) {
     var div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   }
 
+  function presenceLabel(agent) {
+    var presence = agent.presence || (agent.online ? "active" : "offline");
+    return t("agent.presence." + presence);
+  }
+
   function renderAgent(agent) {
     var li = document.createElement("li");
     var statusClass = agent.presence || (agent.online ? "active" : "offline");
-    var statusLabel = agent.presence_label || (agent.online ? "Active" : "Offline");
+    var statusLabel = presenceLabel(agent);
     var nameHtml = agent.overview_url
       ? "<a href=\"" + escapeHtml(agent.overview_url) + "\">" + escapeHtml(agent.name) + "</a>"
       : escapeHtml(agent.name);
@@ -42,20 +53,26 @@
     listEl.innerHTML = "";
 
     if (!allAgents.length) {
-      listEl.innerHTML = "<li class=\"agent-status-empty\">No registered agents yet.</li>";
+      listEl.innerHTML = "<li class=\"agent-status-empty\">" + escapeHtml(t("agent.none_registered")) + "</li>";
       if (noMatchEl) noMatchEl.hidden = true;
+      if (footerEl) footerEl.hidden = true;
       return;
     }
 
     if (!agents.length) {
       if (noMatchEl) noMatchEl.hidden = false;
+      if (footerEl) footerEl.hidden = true;
       return;
     }
 
     if (noMatchEl) noMatchEl.hidden = true;
-    agents.forEach(function (agent) {
+    var shown = agents.slice(0, MAX_SIDEBAR);
+    shown.forEach(function (agent) {
       listEl.appendChild(renderAgent(agent));
     });
+    if (footerEl) {
+      footerEl.hidden = agents.length <= MAX_SIDEBAR;
+    }
   }
 
   function renderAgents(data) {
@@ -69,8 +86,9 @@
       .then(renderAgents)
       .catch(function () {
         allAgents = [];
-        listEl.innerHTML = "<li class=\"agent-status-empty\">Could not load agent status.</li>";
+        listEl.innerHTML = "<li class=\"agent-status-empty\">" + escapeHtml(t("agent.load_error")) + "</li>";
         if (noMatchEl) noMatchEl.hidden = true;
+        if (footerEl) footerEl.hidden = true;
       });
   }
 

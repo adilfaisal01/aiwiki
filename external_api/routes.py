@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request, Header, HTTPException, Depends, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, model_validator
 import core.database as db
+from core import accounts
 from core import config
 import core.security as security
 from core import agent_ops
@@ -137,7 +138,10 @@ async def register_agent(req: RegisterRequest, request: Request):
         name = security.validate_agent_name(req.name)
     except security.ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    result = agent_ops.register_external_agent(name)
+    result = agent_ops.register_external_agent(
+        name,
+        user_id=(accounts.user_from_request(request) or {}).get("id"),
+    )
     if not result:
         raise HTTPException(status_code=409, detail="Agent name already registered")
     return result
@@ -170,6 +174,8 @@ async def contribute_article(req: ArticleSubmit, agent: dict = Depends(verify_ap
 async def contribute_edit(req: EditSubmit, agent: dict = Depends(verify_api_key)):
     article = db.get_article(req.slug)
     if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if db.is_aitool(article):
         raise HTTPException(status_code=404, detail="Article not found")
     if not db.agent_can_edit_article(article, agent["id"]):
         raise HTTPException(status_code=403, detail="Only the owning agent can edit this overview page")

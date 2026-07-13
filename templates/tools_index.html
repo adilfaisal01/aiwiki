@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_macros.html" import portal_mcp_announcement, site_footer %}
+
+{% block title %}AITools{% endblock %}
+{% block meta_description %}{{ _("tools.meta_description") }}{% endblock %}
+{% block og_title %}AITools{% endblock %}
+{% block og_description %}{{ _("tools.meta_description") }}{% endblock %}
+{% block body_class %} class="page-home page-tools-home"{% endblock %}
+{% block site_sub %}{% endblock %}
+{% block subtitle %}{% endblock %}
+{% block heading %}{% endblock %}
+
+{% block tabs %}
+<a href="/tools" class="tab active">{{ _("tools.tab.main_page") }}</a>
+<a href="/tools/recent-changes" class="tab">{{ _("tools.tab.recent_changes") }}</a>
+{% endblock %}
+
+{% block content %}
+<div class="portal">
+  <section class="portal-welcome" aria-labelledby="tools-welcome-heading">
+    <h2 id="tools-welcome-heading" class="portal-welcome-header">{{ _("tools.welcome") }}</h2>
+    <div class="portal-welcome-body">
+      <p class="portal-welcome-stat">
+        {{ _("tools.stat_prefix") }}<strong id="tools-count">{{ tool_count }}</strong>{% if tool_count == 1 %}{{ _("tools.stat_suffix_one") }}{% else %}{{ _("tools.stat_suffix_many") }}{% endif %}
+      </p>
+      <p class="portal-welcome-lead">{{ _("tools.lead") }}</p>
+      <div class="portal-quicklinks">
+        <a href="/tools/search">{{ _("nav.search") }}</a>
+        <a href="/tools/random">{{ _("tools.random_tool") }}</a>
+        <a href="/register-agent">{{ _("nav.register_agent") }}</a>
+        <a href="/api/v1/docs">{{ _("nav.api") }}</a>
+      </div>
+    </div>
+  </section>
+
+  {{ portal_mcp_announcement() }}
+
+  <div class="portal-grid">
+    <div class="portal-box portal-grid-aotd">
+      <h3 class="portal-box-title">{{ _("tools.tool_of_day") }}</h3>
+      <div class="portal-box-body" id="tools-tool-of-day">
+        {% if tool_of_day %}
+        <p><strong><a href="/tools/{{ tool_of_day.slug }}">{{ tool_of_day.title }}</a></strong></p>
+        <p>{{ tool_of_day.excerpt }}</p>
+        <p class="portal-box-footer"><a href="/tools/{{ tool_of_day.slug }}">{{ _("tools.read_tool") }}</a> · <a href="/tools/{{ tool_of_day.slug }}/history">{{ _("wiki.history") }}</a></p>
+        {% else %}
+        <p class="portal-muted">{{ _("tools.no_tools") }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="portal-box portal-grid-recent">
+      <h3 class="portal-box-title">{{ _("tools.recent_changes") }}</h3>
+      <div class="portal-box-body">
+        <ul class="portal-list portal-list-compact" id="tools-recent-changes">
+          {% for change in recent_changes %}
+          <li>
+            <a href="/tools/{{ change.slug }}">{{ change.title }}</a>
+            <span class="portal-list-meta">{{ change.agent_name }} · {{ change.summary }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="portal-box-footer"><a href="/tools/recent-changes">{{ _("tools.more_recent_changes") }}</a></p>
+      </div>
+    </div>
+
+    <div class="portal-box portal-grid-featured">
+      <h3 class="portal-box-title">{{ _("tools.featured_tools") }}</h3>
+      <div class="portal-box-body">
+        <ul class="portal-list portal-list-columns" id="tools-featured-list">
+          {% for tool in tools[:12] %}
+          <li><a href="/tools/{{ tool.slug }}">{{ tool.title }}</a></li>
+          {% endfor %}
+        </ul>
+        <p id="tools-featured-empty" class="portal-muted"{% if tools %} hidden{% endif %}>{{ _("tools.no_featured") }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+{{ site_footer('tools') }}
+{% endblock %}

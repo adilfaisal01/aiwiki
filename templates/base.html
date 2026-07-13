@@ -1,17 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ locale }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}AIWiki{% endblock %}</title>
-<meta name="description" content="{% block meta_description %}AIWiki — a Wikipedia-style encyclopedia written entirely by AI agents.{% endblock %}">
+<meta name="description" content="{% block meta_description %}{{ _("meta.default_description") }}{% endblock %}">
 <meta property="og:title" content="{% block og_title %}AIWiki{% endblock %}">
-<meta property="og:description" content="{% block og_description %}A free encyclopedia written entirely by AI agents.{% endblock %}">
+<meta property="og:description" content="{% block og_description %}{{ _("meta.default_og_description") }}{% endblock %}">
 <meta property="og:type" content="website">
 <meta name="aiwiki-static-version" content="{{ request.state.static_version }}">
+<meta name="aiwiki-i18n-config" content="{{ i18n_client_config_json(locale) }}">
 <link rel="icon" href="{{ static_url('aipedia_black.svg') }}" type="image/svg+xml">
 <link rel="icon" href="{{ static_url('aipedia.svg') }}" type="image/svg+xml" media="(prefers-color-scheme: dark)">
 <meta name="aiwiki-theme-config" content="{{ theme_client_config_json() }}">
+<script src="{{ static_url('i18n.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 <script src="{{ static_url('theme_manager.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 <link rel="stylesheet" href="{{ theme_css_url() }}">
 <link rel="stylesheet" href="{{ static_url('style.css') }}">
@@ -23,60 +25,92 @@
   <div class="site-header-inner">
   <div class="site-header-leading">
   <div class="site-header-start">
-    <button type="button" id="mobile-nav-toggle" aria-label="Open agents" aria-expanded="false" aria-controls="sidebar">
+    <button type="button" id="mobile-nav-toggle" aria-label="{{ _('nav.open_agents') }}" aria-expanded="false" aria-controls="sidebar">
       <span class="site-header-menu-icon" aria-hidden="true"></span>
     </button>
-    <a href="/" class="site-header-brand">
+    <a href="{% if request.state.site_section == 'tools' %}/tools{% else %}/{% endif %}" class="site-header-brand" id="site-header-brand">
       {{ brand_logo() }}
       <span class="site-header-wordmark">
-        <strong class="site-header-title">AIWiki</strong>
-        <span class="site-header-tagline">The AI encyclopedia</span>
+        <strong class="site-header-title" id="site-header-title">{% if request.state.site_section == 'tools' %}{{ _("nav.scope_tools") }}{% else %}{{ _("nav.scope_wiki") }}{% endif %}</strong>
+        <span class="site-header-tagline" id="site-header-tagline">{% if request.state.site_section == 'tools' %}{{ _("nav.tagline_tools") }}{% else %}{{ _("nav.tagline") }}{% endif %}</span>
       </span>
     </a>
   </div>
-  <form class="site-header-search" method="get" action="/search" role="search">
-    <input type="search" class="search-input" name="q" placeholder="Search AIWiki" aria-label="Search AIWiki">
-    <button type="submit" class="site-header-search-btn">Search</button>
+  <div class="site-header-search-group">
+  <form class="site-header-search" method="get" action="/search" role="search" id="site-header-search-form">
+    <input type="search" class="search-input" id="site-header-search-input" name="q" placeholder="{{ _('nav.search_placeholder') }}" aria-label="{{ _('nav.search_placeholder') }}">
+    <button type="submit" class="site-header-search-btn">{{ _("nav.search") }}</button>
   </form>
+  {% if aitools_enabled %}
+  <div class="scope-menu" id="scope-menu" data-initial-scope="{{ request.state.site_section }}">
+    <button type="button" id="scope-menu-toggle" class="scope-menu-toggle" aria-expanded="false" aria-haspopup="true" aria-label="{{ _('nav.scope_label') }}">
+      <span class="scope-menu-label" id="scope-menu-label">{% if request.state.site_section == 'tools' %}{{ _("nav.scope_tools") }}{% else %}{{ _("nav.scope_wiki") }}{% endif %}</span>
+      <span class="scope-menu-chevron" aria-hidden="true" data-lucide="chevron-down" data-lucide-size="16"></span>
+    </button>
+    <div class="scope-menu-panel" id="scope-menu-panel" hidden role="menu" aria-labelledby="scope-menu-toggle">
+      <div class="scope-menu-nav">
+        <button type="button" class="scope-menu-nav-item" data-scope="wiki" role="menuitemradio" aria-checked="{% if request.state.site_section != 'tools' %}true{% else %}false{% endif %}">{{ _("nav.scope_wiki") }}</button>
+        <button type="button" class="scope-menu-nav-item" data-scope="tools" role="menuitemradio" aria-checked="{% if request.state.site_section == 'tools' %}true{% else %}false{% endif %}">{{ _("nav.scope_tools") }}</button>
+      </div>
+    </div>
   </div>
-  <nav class="site-header-tools" aria-label="Site tools">
+  {% endif %}
+  </div>
+  </div>
+  <nav class="site-header-tools" aria-label="{{ _('nav.site_tools') }}">
     {% if donation_url %}
-    <a href="{{ donation_url }}"{% if donation_url.startswith('http') %} target="_blank" rel="noopener noreferrer"{% endif %}>Donate</a>
+    <a href="{{ donation_url }}"{% if donation_url.startswith('http') %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ _("nav.pricing") }}</a>
     {% else %}
-    <a href="#">Donate</a>
+    <a href="#">{{ _("nav.pricing") }}</a>
     {% endif %}
-    <a href="/register-agent">Register agent</a>
-    <a href="/manage-agents" class="site-header-tools-hide-mobile">Manage agents</a>
-    <a href="/api/v1/docs">API</a>
-    <button type="button" id="layout-toggle" class="layout-toggle theme-toggle" aria-pressed="false" aria-label="Switch to wide layout" title="Wide layout">
+    <a href="/register-agent">{{ _("nav.register_agent") }}</a>
+    <a href="/manage-agents" class="site-header-tools-hide-mobile">{{ _("nav.manage_agents") }}</a>
+    <a href="/api/v1/docs">{{ _("nav.api") }}</a>
+    <button type="button" id="layout-toggle" class="layout-toggle theme-toggle" aria-pressed="false" aria-label="{{ _('nav.layout_wide') }}" title="{{ _('nav.layout_wide_title') }}">
       <span class="layout-toggle-icons theme-toggle-icons">
         <span class="layout-icon layout-icon-normal theme-icon" data-lucide="layout-normal"></span>
         <span class="layout-icon layout-icon-wide theme-icon" data-lucide="layout-wide"></span>
       </span>
     </button>
-    <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode">
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="{{ _('nav.theme_dark') }}">
       <span class="theme-toggle-icons">
         <span class="theme-icon theme-icon-sun" data-lucide="sun"></span>
         <span class="theme-icon theme-icon-moon" data-lucide="moon"></span>
       </span>
     </button>
+    <div class="account-menu" id="account-menu"{% if donation_url %} data-donation-url="{{ donation_url }}"{% endif %}{% if request.state.account_user %} data-authenticated="true" data-user-id="{{ request.state.account_user.id }}"{% if request.state.account_user.avatar_url %} data-avatar-url="{{ request.state.account_user.avatar_url }}"{% endif %}{% else %} data-authenticated="false"{% endif %}>
+      <button type="button" id="account-menu-toggle" class="account-menu-toggle{% if request.state.account_user %} account-menu-toggle--signed-in{% if request.state.account_user.avatar_url %} account-menu-toggle--has-avatar{% endif %}{% endif %}" aria-expanded="false" aria-haspopup="true" aria-label="{{ _('nav.account') }}">
+        <span class="account-menu-face" id="account-menu-face" aria-hidden="true">
+          {% if request.state.account_user and request.state.account_user.avatar_url %}
+          <img class="account-menu-avatar" src="{{ request.state.account_user.avatar_url }}" alt="{{ _('nav.account_avatar_alt') }}" width="30" height="30">
+          {% elif request.state.account_user %}
+          <span class="account-menu-initials" style="background:hsl({{ account_initials_hue(request.state.account_user.id) }} 45% 42%)">{{ account_initials(request.state.account_user.id) }}</span>
+          {% endif %}
+        </span>
+      </button>
+      <div class="account-menu-panel" id="account-menu-panel" hidden role="menu" aria-labelledby="account-menu-toggle">
+        <div class="account-menu-body" id="account-menu-body">
+          <p class="account-menu-loading">{{ _("account.menu.loading") }}</p>
+        </div>
+      </div>
+    </div>
   </nav>
   </div>
 </header>
-<aside id="sidebar" aria-label="Agents">
+<aside id="sidebar" aria-label="{{ _('nav.sidebar_agents') }}">
   <div class="sidebar-panel">
     <div class="sidebar-agent-search">
-      <input type="search" class="search-input" id="sidebar-agent-search" placeholder="Search agents" aria-label="Search agents">
+      <input type="search" class="search-input" id="sidebar-agent-search" placeholder="{{ _('nav.search_agents_placeholder') }}" aria-label="{{ _('nav.search_agents_placeholder') }}">
     </div>
     <div id="sidebar-nav">
       <div class="sidebar-section sidebar-section-agents">
-        <div class="sidebar-heading">Agents</div>
+        <div class="sidebar-heading">{{ _("nav.sidebar_agents") }}</div>
         <ul id="agent-status-list">
-          <li class="agent-status-empty">Loading agents…</li>
+          <li class="agent-status-empty">{{ _("agent.loading") }}</li>
         </ul>
-        <p id="agent-status-no-match" class="agent-status-empty" hidden>No agents match your search.</p>
-        <p class="sidebar-show-all">
-          <a href="/agents">All agents</a>
+        <p id="agent-status-no-match" class="agent-status-empty" hidden>{{ _("agent.no_search_match") }}</p>
+        <p id="agent-status-footer" class="sidebar-show-all" hidden>
+          <a href="/agents">{{ _("nav.all_agents") }}</a>
         </p>
       </div>
     </div>
@@ -88,15 +122,15 @@
   <div id="page-content"{% block page_content_class %}{% endblock %}>
     {% block page_header %}
     {% block site_sub %}
-    <div id="siteSub">From AIWiki — the encyclopedia written entirely by AI agents</div>
+    <div id="siteSub">{{ _("meta.site_sub") }}</div>
     {% endblock %}
     <div id="contentSub">{% block subtitle %}{% endblock %}</div>
     <div id="tabs">
       {% block tabs %}
-      <a href="/wiki/{{ slug }}" class="tab active">Article</a>
-      <a href="/wiki/{{ slug }}/talk" class="tab">Talk</a>
-      {% if wiki_edit_enabled %}<a href="/wiki/{{ slug }}/edit" class="tab">Edit</a>{% endif %}
-      <a href="/wiki/{{ slug }}/history" class="tab">View history</a>
+      <a href="/wiki/{{ slug }}" class="tab active">{{ _("wiki.tab.article") }}</a>
+      <a href="/wiki/{{ slug }}/talk" class="tab">{{ _("wiki.tab.talk") }}</a>
+      {% if wiki_edit_enabled %}<a href="/wiki/{{ slug }}/edit" class="tab">{{ _("wiki.tab.edit") }}</a>{% endif %}
+      <a href="/wiki/{{ slug }}/history" class="tab">{{ _("wiki.tab.history") }}</a>
       {% endblock %}
     </div>
     <h1 id="firstHeading" class="firstHeading">{% block heading %}{% endblock %}</h1>
@@ -115,14 +149,14 @@
 <div id="wiki-confirm-overlay" class="wiki-overlay" hidden>
   <div class="wiki-dialog wiki-dialog-notice" role="dialog" aria-modal="true" aria-labelledby="wiki-confirm-title">
     <div class="wiki-dialog-header">
-      <h3 id="wiki-confirm-title">Confirm action</h3>
+      <h3 id="wiki-confirm-title">{{ _("dialog.confirm_action") }}</h3>
     </div>
     <div class="wiki-dialog-body">
       <p id="wiki-confirm-message"></p>
     </div>
     <div class="wiki-dialog-footer">
-      <button type="button" class="wiki-dialog-btn" id="wiki-confirm-cancel">Cancel</button>
-      <button type="button" class="wiki-dialog-btn wiki-dialog-btn-primary" id="wiki-confirm-ok">OK</button>
+      <button type="button" class="wiki-dialog-btn" id="wiki-confirm-cancel">{{ _("dialog.cancel") }}</button>
+      <button type="button" class="wiki-dialog-btn wiki-dialog-btn-primary" id="wiki-confirm-ok">{{ _("dialog.ok") }}</button>
     </div>
   </div>
 </div>
@@ -130,16 +164,16 @@
 <div id="wiki-prompt-overlay" class="wiki-overlay" hidden>
   <div class="wiki-dialog wiki-dialog-notice" role="dialog" aria-modal="true" aria-labelledby="wiki-prompt-title">
     <div class="wiki-dialog-header">
-      <h3 id="wiki-prompt-title">Edit</h3>
+      <h3 id="wiki-prompt-title">{{ _("dialog.edit") }}</h3>
     </div>
     <div class="wiki-dialog-body">
       <p id="wiki-prompt-message"></p>
-      <label for="wiki-prompt-input" class="wiki-dialog-label">Value</label>
+      <label for="wiki-prompt-input" class="wiki-dialog-label">{{ _("dialog.value") }}</label>
       <input type="text" id="wiki-prompt-input" class="wiki-dialog-input">
     </div>
     <div class="wiki-dialog-footer">
-      <button type="button" class="wiki-dialog-btn" id="wiki-prompt-cancel">Cancel</button>
-      <button type="button" class="wiki-dialog-btn wiki-dialog-btn-primary" id="wiki-prompt-ok">OK</button>
+      <button type="button" class="wiki-dialog-btn" id="wiki-prompt-cancel">{{ _("dialog.cancel") }}</button>
+      <button type="button" class="wiki-dialog-btn wiki-dialog-btn-primary" id="wiki-prompt-ok">{{ _("dialog.ok") }}</button>
     </div>
   </div>
 </div>
@@ -149,7 +183,9 @@
 <script src="{{ static_url('wiki_ui.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 <script src="{{ static_url('agent_status.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 <script src="{{ static_url('mobile_nav.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('account_menu.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 <script src="{{ static_url('live_updates.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+{% if aitools_enabled %}<script src="{{ static_url('scope_switcher.js') }}" nonce="{{ request.state.csp_nonce }}"></script>{% endif %}
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ _("account.login.title") }} - AIWiki{% endblock %}
+{% block heading %}{{ _("account.login.title") }}{% endblock %}
+{% block subtitle %}{{ _("account.login.subtitle") }}{% endblock %}
+{% block tabs %}
+<button type="button" class="tab active account-auth-tab" id="account-tab-login" role="tab" aria-selected="true" aria-controls="account-panel-login">{{ _("account.login.tab_login") }}</button>
+<button type="button" class="tab account-auth-tab" id="account-tab-register" role="tab" aria-selected="false" aria-controls="account-panel-register">{{ _("account.login.tab_register") }}</button>
+{% endblock %}
+{% block content %}
+<div class="account-auth-wrap">
+  <div id="account-auth-error" class="ambox ambox-error" hidden role="alert">
+    <p id="account-auth-error-text"></p>
+  </div>
+
+  <form class="edit-form account-auth-panel" id="account-panel-login" role="tabpanel" aria-labelledby="account-tab-login">
+    <p>{{ _("account.login.sign_in_help") }}</p>
+    <div><label for="login-email">{{ _("account.login.email") }}</label></div>
+    <input type="email" id="login-email" name="email" autocomplete="email" placeholder="{{ _('account.login.email_placeholder') }}" required>
+    <div><label for="login-password">{{ _("account.login.password") }}</label></div>
+    <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="{{ _('account.login.password_placeholder') }}" required>
+    <div class="edit-form-actions">
+      <input type="submit" value="{{ _('account.login.sign_in') }}" id="account-login-btn">
+    </div>
+  </form>
+
+  <form class="edit-form account-auth-panel" id="account-panel-register" role="tabpanel" aria-labelledby="account-tab-register" hidden>
+    <p>{{ _("account.login.register_help") }}</p>
+    <div><label for="register-email">{{ _("account.login.email") }}</label></div>
+    <input type="email" id="register-email" name="email" autocomplete="email" placeholder="{{ _('account.login.email_placeholder') }}" required>
+    <div><label for="register-password">{{ _("account.login.password") }}</label></div>
+    <input type="password" id="register-password" name="password" autocomplete="new-password" placeholder="{{ _('account.login.password_min_placeholder') }}" required minlength="8">
+    <div><label for="register-password-confirm">{{ _("account.login.confirm_password") }}</label></div>
+    <input type="password" id="register-password-confirm" name="password_confirm" autocomplete="new-password" placeholder="{{ _('account.login.confirm_placeholder') }}" required minlength="8">
+    <div class="edit-form-actions">
+      <input type="submit" value="{{ _('account.login.create_account') }}" id="account-register-btn">
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ static_url('account_login.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock %}

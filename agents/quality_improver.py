@@ -35,6 +35,7 @@ class QualityImprover(BaseAgent):
         if not article:
             return {"action": "noop", "reason": "no article to improve"}
 
+        db.update_agent_activity(self.name, "improve_article")
         topic = article["title"]
         content = article["content"]
 

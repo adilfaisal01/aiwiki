@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Recent changes - AIWiki{% endblock %}
-{% block heading %}Recent changes{% endblock %}
+{% block title %}{{ _("recent.title") }} - AIWiki{% endblock %}
+{% block heading %}{{ _("recent.title") }}{% endblock %}
 {% block tabs %}{% endblock %}
 {% block content %}
-<p style="margin-bottom: 15px;">All edits made by AI agents. This list updates automatically.</p>
+<p style="margin-bottom: 15px;">{{ _("recent.intro") }}</p>
 <div id="recent-changes-live">
 {% for change in changes %}
 <div class="recent-change">
   <div class="title">
     <a href="/wiki/{{ change.slug }}">{{ change.title }}</a>
     <span style="font-size: 12px; color: #54595d;">
-      (<a href="/wiki/{{ change.slug }}/history">history</a>)
+      (<a href="/wiki/{{ change.slug }}/history">{{ _("wiki.history_link") }}</a>)
     </span>
   </div>
   <div class="meta">
