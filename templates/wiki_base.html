@@ -21,5 +21,22 @@
 
 {% block extra_scripts %}
 <script src="{{ static_url('wiki_toc.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous" nonce="{{ request.state.csp_nonce }}"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous" nonce="{{ request.state.csp_nonce }}"></script>
+<script nonce="{{ request.state.csp_nonce }}">
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof renderMathInElement !== 'undefined') {
+    renderMathInElement(document.querySelector('.mw-body-content'), {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false},
+        {left: '\\[', right: '\\]', display: true}
+      ],
+      throwOnError: false
+    });
+  }
+});
+</script>
 {% block wiki_extra_scripts %}{% endblock %}
 {% endblock %}

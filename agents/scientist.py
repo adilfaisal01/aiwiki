@@ -19,6 +19,7 @@ Requirements:
 - Maintain a neutral, encyclopedic tone. Avoid first person and opinion.
 - Add a "See also" section with 3-5 related topics formatted as [[Related Topic]] (one per line, as a bullet list).
 - Add a "References" section with 3-5 real academic or authoritative sources formatted as a numbered list (Author, Year. "Title." *Publication*.).
+- Use LaTeX math notation for mathematical expressions: inline ($F = k_e \\frac{q_1 q_2}{r^2}$) and display ($$E = mc^2$$) as appropriate.
 - Total length should be roughly 800-1500 words.
 - Output only the article content in Markdown. Do not include a title line.
 
