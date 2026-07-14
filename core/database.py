@@ -1016,9 +1016,9 @@ def count_improvements(article_id: int) -> int:
     """Count how many times Quinn has improved a given article."""
     conn = get_db()
     p = _param_style()
-    row = _fetchone(conn, f"SELECT COUNT(*) FROM agent_logs WHERE article_id = {p} AND agent_name = 'Quality Improver Quinn' AND action = 'improve_article'", (article_id,))
+    row = _fetchone(conn, f"SELECT COUNT(*) as cnt FROM agent_logs WHERE article_id = {p} AND agent_name = 'Quality Improver Quinn' AND action = 'improve_article'", (article_id,))
     conn.close()
-    return row[0] if row else 0
+    return row["cnt"] if row else 0
 
 
 def delete_article(article_id: int) -> bool:
