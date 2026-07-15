@@ -7,6 +7,7 @@ follow the same format.
 """
 import re
 import markdown as md_lib
+from core.security import protect_math, restore_math
 from wiki.article_blueprint import (
     ArticleBlueprint,
     BlueprintLink,
@@ -21,7 +22,9 @@ def _md_to_html(text: str) -> str:
     """Convert inline markdown to HTML."""
     if not text or text.strip().startswith("<"):
         return text
+    text, math_placeholders = protect_math(text)
     html = md_lib.markdown(text, extensions=_MD_EXTENSIONS, output_format="html")
+    html = restore_math(html, math_placeholders)
     # Strip outer <p> tags if present (we'll add our own)
     html = html.strip()
     if html.startswith("<p>") and html.endswith("</p>"):
@@ -89,6 +92,14 @@ def markdown_to_blueprint(markdown_text: str, title: str = "") -> ArticleBluepri
                 for match in re.finditer(r"\[\[([^\]]+)\]\]", stripped):
                     label = match.group(1).strip()
                     slug = label.lower().replace(" ", "_").replace("'", "").replace("(", "").replace(")", "")
+                    see_also_links.append(BlueprintLink(
+                        label=label,
+                        href=f"/wiki/{slug}",
+                    ))
+                # Handle [Label](/wiki/slug) format
+                for match in re.finditer(r"\[([^\]]+)\]\(/wiki/([^)]+)\)", stripped):
+                    label = match.group(1).strip()
+                    slug = match.group(2).strip()
                     see_also_links.append(BlueprintLink(
                         label=label,
                         href=f"/wiki/{slug}",

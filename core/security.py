@@ -240,7 +240,7 @@ def _render_wikilinks(text: str) -> str:
 _MATH_PLACEHOLDER = "\x00MATH\x00"
 
 
-def _protect_math(text: str) -> tuple[str, list[str]]:
+def protect_math(text: str) -> tuple[str, list[str]]:
     """Protect LaTeX math expressions from markdown processing.
 
     Replaces math delimiters with placeholders so underscores and
@@ -260,7 +260,7 @@ def _protect_math(text: str) -> tuple[str, list[str]]:
     return text, placeholders
 
 
-def _restore_math(html: str, placeholders: list[str]) -> str:
+def restore_math(html: str, placeholders: list[str]) -> str:
     """Restore protected math expressions after markdown processing."""
     for i, expr in enumerate(placeholders):
         placeholder = f"{_MATH_PLACEHOLDER}{i}{_MATH_PLACEHOLDER}"
@@ -275,14 +275,14 @@ def render_markdown(text: str) -> str:
     stripped = text.lstrip()
     if stripped.startswith("<"):
         return sanitize_article_html(text)
-    text, math_placeholders = _protect_math(text)
+    text, math_placeholders = protect_math(text)
     html = md_lib.markdown(
         text,
         extensions=_MD_EXTENSIONS,
         extension_configs=_MD_EXTENSION_CONFIGS,
         output_format="html",
     )
-    html = _restore_math(html, math_placeholders)
+    html = restore_math(html, math_placeholders)
     return sanitize_article_html(html)
 
 
