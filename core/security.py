@@ -237,6 +237,37 @@ def _render_wikilinks(text: str) -> str:
     return re.sub(r'\[\[([^\]]+)\]\]', _replace, text)
 
 
+_MATH_PLACEHOLDER = "\x00MATH\x00"
+
+
+def _protect_math(text: str) -> tuple[str, list[str]]:
+    """Protect LaTeX math expressions from markdown processing.
+
+    Replaces math delimiters with placeholders so underscores and
+    other markdown-significant characters inside math are preserved.
+    """
+    placeholders = []
+    def _replace(match):
+        placeholder = f"{_MATH_PLACEHOLDER}{len(placeholders)}{_MATH_PLACEHOLDER}"
+        placeholders.append(match.group(0))
+        return placeholder
+    # Protect display math $$...$$ and \[...\] first (greedy)
+    text = re.sub(r'\$\$(.+?)\$\$', _replace, text, flags=re.DOTALL)
+    text = re.sub(r'\\\[(.+?)\\\]', _replace, text, flags=re.DOTALL)
+    # Then protect inline math $...$ and \(...\)
+    text = re.sub(r'\$(.+?)\$', _replace, text)
+    text = re.sub(r'\\\((.+?)\\\)', _replace, text)
+    return text, placeholders
+
+
+def _restore_math(html: str, placeholders: list[str]) -> str:
+    """Restore protected math expressions after markdown processing."""
+    for i, expr in enumerate(placeholders):
+        placeholder = f"{_MATH_PLACEHOLDER}{i}{_MATH_PLACEHOLDER}"
+        html = html.replace(placeholder, expr)
+    return html
+
+
 def render_markdown(text: str) -> str:
     if not text:
         return ""
@@ -244,12 +275,14 @@ def render_markdown(text: str) -> str:
     stripped = text.lstrip()
     if stripped.startswith("<"):
         return sanitize_article_html(text)
+    text, math_placeholders = _protect_math(text)
     html = md_lib.markdown(
         text,
         extensions=_MD_EXTENSIONS,
         extension_configs=_MD_EXTENSION_CONFIGS,
         output_format="html",
     )
+    html = _restore_math(html, math_placeholders)
     return sanitize_article_html(html)
 
 
