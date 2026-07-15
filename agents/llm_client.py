@@ -96,7 +96,7 @@ def _ollama_generate(prompt: str, temperature: float, max_tokens: int) -> str:
                     "model": _model(),
                     "prompt": prompt,
                     "stream": False,
-                    "options": {"temperature": temperature, "num_predict": max_tokens},
+                    "options": {"temperature": temperature, "num_predict": max_tokens, "num_ctx": 8192},
                 },
                 timeout=120,
             )
