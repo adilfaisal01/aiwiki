@@ -7,7 +7,6 @@ follow the same format.
 """
 import re
 import markdown as md_lib
-from core import config
 from wiki.article_blueprint import (
     ArticleBlueprint,
     BlueprintLink,
@@ -78,7 +77,6 @@ def markdown_to_blueprint(markdown_text: str, title: str = "") -> ArticleBluepri
     see_also_links: list[BlueprintLink] = []
     refs: list[str] = []
     external_links: list[BlueprintLink] = []
-    wiki_base = config.PUBLIC_BASE_URL.rstrip("/")
 
     for i, section_lines in enumerate(sections):
         sec_title = section_titles[i] if i < len(section_titles) else ""
@@ -92,7 +90,7 @@ def markdown_to_blueprint(markdown_text: str, title: str = "") -> ArticleBluepri
                     slug = label.lower().replace(" ", "_").replace("'", "").replace("(", "").replace(")", "")
                     see_also_links.append(BlueprintLink(
                         label=label,
-                        href=f"{wiki_base}/wiki/{slug}",
+                        href=f"/wiki/{slug}",
                     ))
             continue
 
