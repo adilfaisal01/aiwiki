@@ -180,6 +180,7 @@ class Coordinator(BaseAgent):
             )
             result = self.quality_improver.act({"article": candidate, "feedback": feedback_text})
             if result.get("action") != "noop":
+                self._rebuild_article_infobox(candidate["id"], candidate["title"])
                 db.add_talk_message(
                     candidate["id"], self.name,
                     f"Addressed feedback and improved the article. @{candidate.get('title', '')} has been revised."
@@ -191,7 +192,10 @@ class Coordinator(BaseAgent):
 
         candidate = min(candidates_thin, key=lambda a: len(a["content"].split()))
         self._track(self.quality_improver.name, f"improving: {candidate.get('title', 'article')}")
-        return self.quality_improver.act({"article": candidate})
+        result = self.quality_improver.act({"article": candidate})
+        if result.get("action") != "noop":
+            self._rebuild_article_infobox(candidate["id"], candidate["title"])
+        return result
 
     def _create_from_pending(self, batch_size: int = 2) -> list[dict]:
         """Create up to batch_size articles from pending See also topics."""
@@ -209,6 +213,22 @@ class Coordinator(BaseAgent):
                 result = self._create_new(topic, category)
                 results.append(result)
         return results
+
+    def _rebuild_article_infobox(self, article_id: int, title: str):
+        try:
+            article = db.get_article_by_id(article_id)
+            if not article:
+                return
+            content = article["content"]
+            blueprint = markdown_to_blueprint(content, title)
+            infobox = self._generate_infobox(title, "", content)
+            if infobox:
+                blueprint.infobox = infobox
+            rendered = render_article_blueprint(blueprint)
+            if rendered and len(rendered) > 50:
+                db.update_article(article_id, rendered, self.name, "Rebuilt infobox after improvement")
+        except Exception as e:
+            logger.warning("Failed to rebuild infobox for '%s': %s", title, e)
 
     def _create_new(self, topic: str, category: str) -> dict:
         writer = self.historian if category_for_writer(category) == "history" else self.scientist
