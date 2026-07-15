@@ -56,7 +56,12 @@ def _migration_007_agent_presence_status(conn) -> None:
         db._execute(conn, "ALTER TABLE external_agents ADD COLUMN presence_status TEXT")
 
 
-def _migration_008_users(conn) -> None:
+# NOTE: migration 8 on prod is "pending_topics" from the old codebase.
+# The new migrations (users, accounts, etc.) start at 9 to avoid collision.
+# See _migration_017_pending_topics below for the current version.
+
+
+def _migration_009_users(conn) -> None:
     if not db._table_exists(conn, "users"):
         db._execute(
             conn,
@@ -70,12 +75,12 @@ def _migration_008_users(conn) -> None:
         )
 
 
-def _migration_009_user_avatar_url(conn) -> None:
+def _migration_010_user_avatar_url(conn) -> None:
     if not db._column_exists(conn, "users", "avatar_url"):
         db._execute(conn, "ALTER TABLE users ADD COLUMN avatar_url TEXT")
 
 
-def _migration_010_user_email_password(conn) -> None:
+def _migration_011_user_email_password(conn) -> None:
     if not db._column_exists(conn, "users", "email"):
         db._execute(conn, "ALTER TABLE users ADD COLUMN email TEXT")
     if not db._column_exists(conn, "users", "password_hash"):
@@ -83,18 +88,18 @@ def _migration_010_user_email_password(conn) -> None:
     db._execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 
 
-def _migration_011_external_agents_user_id(conn) -> None:
+def _migration_012_external_agents_user_id(conn) -> None:
     if not db._column_exists(conn, "external_agents", "user_id"):
         db._execute(conn, "ALTER TABLE external_agents ADD COLUMN user_id TEXT")
     db._execute(conn, "CREATE INDEX IF NOT EXISTS idx_external_agents_user_id ON external_agents(user_id)")
 
 
-def _migration_012_user_locale(conn) -> None:
+def _migration_013_user_locale(conn) -> None:
     if not db._column_exists(conn, "users", "locale"):
         db._execute(conn, "ALTER TABLE users ADD COLUMN locale TEXT")
 
 
-def _migration_013_builtin_agents(conn) -> None:
+def _migration_014_builtin_agents(conn) -> None:
     if not db._table_exists(conn, "builtin_agents"):
         sid = "SERIAL PRIMARY KEY" if config.is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
         db._execute(
@@ -115,7 +120,7 @@ def _migration_013_builtin_agents(conn) -> None:
     db.seed_builtin_agents(conn)
 
 
-def _migration_014_user_server_invoke_usage(conn) -> None:
+def _migration_015_user_server_invoke_usage(conn) -> None:
     if not db._table_exists(conn, "user_server_invoke_usage"):
         db._execute(
             conn,
@@ -134,12 +139,12 @@ def _migration_014_user_server_invoke_usage(conn) -> None:
         )
 
 
-def _migration_015_articles_tool_spec(conn) -> None:
+def _migration_016_articles_tool_spec(conn) -> None:
     if not db._column_exists(conn, "articles", "tool_spec_json"):
         db._execute(conn, "ALTER TABLE articles ADD COLUMN tool_spec_json TEXT")
 
 
-def _migration_016_pending_topics(conn) -> None:
+def _migration_017_pending_topics(conn) -> None:
     """Create pending_topics table for wiki-linked article generation."""
     if db._table_exists(conn, "pending_topics"):
         return
@@ -169,15 +174,16 @@ MIGRATIONS: list[Migration] = [
     Migration(5, "external_agents_webhook", _migration_005_external_agents_webhook),
     Migration(6, "backfill_agent_overviews", _migration_006_backfill_agent_overviews),
     Migration(7, "agent_presence_status", _migration_007_agent_presence_status),
-    Migration(8, "users", _migration_008_users),
-    Migration(9, "user_avatar_url", _migration_009_user_avatar_url),
-    Migration(10, "user_email_password", _migration_010_user_email_password),
-    Migration(11, "external_agents_user_id", _migration_011_external_agents_user_id),
-    Migration(12, "user_locale", _migration_012_user_locale),
-    Migration(13, "builtin_agents", _migration_013_builtin_agents),
-    Migration(14, "user_server_invoke_usage", _migration_014_user_server_invoke_usage),
-    Migration(15, "articles_tool_spec", _migration_015_articles_tool_spec),
-    Migration(16, "pending_topics", _migration_016_pending_topics),
+    # 8 = pending_topics (legacy, already on prod)
+    Migration(9, "users", _migration_009_users),
+    Migration(10, "user_avatar_url", _migration_010_user_avatar_url),
+    Migration(11, "user_email_password", _migration_011_user_email_password),
+    Migration(12, "external_agents_user_id", _migration_012_external_agents_user_id),
+    Migration(13, "user_locale", _migration_013_user_locale),
+    Migration(14, "builtin_agents", _migration_014_builtin_agents),
+    Migration(15, "user_server_invoke_usage", _migration_015_user_server_invoke_usage),
+    Migration(16, "articles_tool_spec", _migration_016_articles_tool_spec),
+    Migration(17, "pending_topics", _migration_017_pending_topics),
 ]
 
 CURRENT_VERSION = MIGRATIONS[-1].version
