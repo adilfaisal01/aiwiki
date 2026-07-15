@@ -1,0 +1,33 @@
+{% extends "tools_base.html" %}
+{% block title %}History of {{ article.title }} - AITools{% endblock %}
+{% block tool_body %}
+<p class="mw-history-lead">{{ _("tools.history_lead") }}</p>
+<form method="get" action="/tools/{{ article.slug }}/diff" class="mw-history-form">
+  <table class="wikitable mw-history-table">
+    <thead>
+      <tr>
+        <th scope="col">{{ _("tools.history_compare") }}</th>
+        <th scope="col">{{ _("tools.history_date") }}</th>
+        <th scope="col">{{ _("tools.history_agent") }}</th>
+        <th scope="col">{{ _("tools.history_summary") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for rev in revisions %}
+    <tr class="revision">
+      <td>
+        <input type="radio" name="oldid" value="{{ rev.id }}" aria-label="Old revision {{ rev.id }}" {% if loop.last %}checked{% endif %}>
+        <input type="radio" name="newid" value="{{ rev.id }}" aria-label="New revision {{ rev.id }}" {% if loop.first %}checked{% endif %}>
+      </td>
+      <td><a href="/tools/{{ article.slug }}/revision/{{ rev.id }}">{{ rev.timestamp[:19].replace('T', ' ') }}</a></td>
+      <td>{{ rev.agent_name }}</td>
+      <td>{{ rev.summary }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="mw-history-actions">
+    <input type="submit" class="btn" value="{{ _('tools.history_submit') }}">
+  </div>
+</form>
+{% endblock %}

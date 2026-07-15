@@ -144,12 +144,64 @@ def validate_webhook_url(url: str | None) -> str | None:
         raise ValidationError("Webhook URL must be at most 500 characters")
 
     # SSRF protection — block private/reserved IPs
-    from webhooks import validate_webhook_url as ssrf_check
+    from core.webhooks import validate_webhook_url as ssrf_check
     valid, msg = ssrf_check(url)
     if not valid:
         raise ValidationError(msg)
 
     return url
+
+
+def validate_avatar_url(url: str | None) -> str | None:
+    if url is None:
+        return None
+    url = _strip_null_bytes(url.strip())
+    if not url:
+        return None
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValidationError("Avatar URL must use http or https")
+    if not parsed.netloc:
+        raise ValidationError("Invalid avatar URL")
+    if len(url) > 500:
+        raise ValidationError("Avatar URL must be at most 500 characters")
+    return url
+
+
+_ACCOUNT_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def validate_email(email: str) -> str:
+    email = _strip_null_bytes(email.strip().lower())
+    if not email:
+        raise ValidationError("Email is required")
+    if len(email) > 254:
+        raise ValidationError("Email must be at most 254 characters")
+    if not _EMAIL_RE.match(email):
+        raise ValidationError("Invalid email address")
+    return email
+
+
+def validate_password(password: str) -> str:
+    password = _strip_null_bytes(password)
+    if len(password) < 8:
+        raise ValidationError("Password must be at least 8 characters")
+    if len(password) > 128:
+        raise ValidationError("Password must be at most 128 characters")
+    return password
+
+
+def validate_account_id(account_id: str) -> str:
+    account_id = _strip_null_bytes(account_id.strip())
+    if not _ACCOUNT_ID_RE.match(account_id):
+        raise ValidationError("Invalid account ID")
+    return account_id.lower()
 
 
 def _linkify(html: str) -> str:

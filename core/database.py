@@ -298,35 +298,12 @@ def agent_overview_title(name: str) -> str:
     return f"{name} (Agent Overview)"
 
 
-def default_agent_overview_content(name: str, role: str = "external") -> str:
-    if role == "builtin":
-        descriptions = {
-            "Kai (Coordinator)": "Coordinates the AIWiki agent pipeline — picks topics, delegates writing, and manages the review cycle.",
-            "Hal (Historian)": "Writes comprehensive history articles covering causes, key events, major figures, and legacy.",
-            "Sage (Scientist)": "Writes detailed science and technology articles covering principles, applications, and current research.",
-            "Carla (Critic)": "Reviews articles for structure, tone, completeness, and provides constructive feedback.",
-            "Finn (Fact-Checker)": "Fact-checks articles for accuracy, vague claims, absolute language, and neutrality.",
-            "Quinn (Quality Improver)": "Rewrites short or low-quality articles into comprehensive, well-structured encyclopedia entries.",
-        }
-        desc = descriptions.get(name, f"Builtin AIWiki agent: {name}")
-        return f"""# {name}
+def default_agent_overview_content(name: str, role: str = "external", *, builtin: bool | None = None) -> str:
+    is_builtin = builtin if builtin is not None else role == "builtin"
+    if is_builtin:
+        from core.builtin_agents import default_builtin_overview_content
 
-{desc}
-
-## Capabilities
-
-- **Autonomous operation**: Runs on a configurable cycle (default 30 minutes)
-- **LLM-powered**: Uses Ollama for content generation and analysis
-- **Collaborative**: Works with other agents in the AIWiki pipeline
-- **Self-improving**: Continuously reviews and refines content
-
-## Links
-
-- [All Agents](/agents)
-- [Recent Changes](/recent-changes)
-- [API Documentation](/api/v1/docs)
-"""
-
+        return default_builtin_overview_content(name)
     return f"""# {name}
 
 This is the overview page for the external AI agent **{name}**.
@@ -351,6 +328,10 @@ def is_agent_overview(article: dict) -> bool:
     return article.get("article_kind") == "agent_overview"
 
 
+def is_aitool(article: dict) -> bool:
+    return article.get("article_kind") == "aitool"
+
+
 def agent_can_edit_article(article: dict, agent_id: int) -> bool:
     if not is_agent_overview(article):
         return True
@@ -367,10 +348,18 @@ def _unique_slug(conn, base_slug: str) -> str:
     return slug
 
 
-def _create_agent_overview_conn(conn, agent_id: int, agent_name: str, role: str = "external") -> dict | None:
+def _create_agent_overview_conn(
+    conn,
+    agent_id: int,
+    agent_name: str,
+    role: str = "external",
+    *,
+    builtin: bool = False,
+) -> dict | None:
     title = agent_overview_title(agent_name)
     slug = _unique_slug(conn, agent_overview_slug(agent_name))
-    content = default_agent_overview_content(agent_name, role)
+    overview_role = "builtin" if builtin else role
+    content = default_agent_overview_content(agent_name, overview_role)
     ts = now()
     p = _param_style()
     returning = " RETURNING id" if config.is_postgres() else ""
@@ -387,7 +376,7 @@ def _create_agent_overview_conn(conn, agent_id: int, agent_name: str, role: str 
             f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
             (article_id, content, agent_label, "Agent overview page created", ts),
         )
-        if role == "builtin":
+        if builtin or role == "builtin":
             _execute(
                 conn,
                 f"UPDATE builtin_agents SET overview_article_id = {p} WHERE id = {p}",
@@ -404,6 +393,52 @@ def _create_agent_overview_conn(conn, agent_id: int, agent_name: str, role: str 
         return None
 
 
+def seed_builtin_agents(conn) -> int:
+    from core.builtin_agents import BUILTIN_AGENTS
+
+    p = _param_style()
+    ts = now()
+    seeded = 0
+    for agent in BUILTIN_AGENTS:
+        existing = _fetchone(conn, f"SELECT id, overview_article_id FROM builtin_agents WHERE name = {p}", (agent["name"],))
+        if existing:
+            if not existing.get("overview_article_id"):
+                if _create_agent_overview_conn(conn, existing["id"], agent["name"], builtin=True):
+                    seeded += 1
+            continue
+        agent_id = _execute_returning(
+            conn,
+            f"INSERT INTO builtin_agents (name, role, created_at, last_seen_at) "
+            f"VALUES ({p}, {p}, {p}, {p})"
+            + (" RETURNING id" if config.is_postgres() else ""),
+            (agent["name"], agent["role"], ts, ts),
+        )
+        if agent_id and _create_agent_overview_conn(conn, agent_id, agent["name"], builtin=True):
+            seeded += 1
+    return seeded
+
+
+def update_agent_activity(agent_name: str, action: str = "") -> None:
+    conn = get_db()
+    ts = now()
+    p = _param_style()
+    builtin = _fetchone(conn, f"SELECT id FROM builtin_agents WHERE name = {p}", (agent_name,))
+    if builtin:
+        _execute(
+            conn,
+            f"UPDATE builtin_agents SET last_seen_at = {p}, last_action = {p}, last_action_at = {p} WHERE id = {p}",
+            (ts, action, ts, builtin["id"]),
+        )
+    else:
+        _execute(
+            conn,
+            f"UPDATE external_agents SET last_seen_at = {p}, last_action = {p}, last_action_at = {p} WHERE name = {p} AND is_active = 1",
+            (ts, action, ts, agent_name),
+        )
+    conn.commit()
+    conn.close()
+
+
 def backfill_agent_overviews(conn) -> int:
     rows = _fetchall(
         conn,
@@ -418,58 +453,6 @@ def backfill_agent_overviews(conn) -> int:
     return created
 
 
-BUILTIN_AGENTS = [
-    {"name": "Kai (Coordinator)", "role": "coordinator"},
-    {"name": "Hal (Historian)", "role": "history"},
-    {"name": "Sage (Scientist)", "role": "science"},
-    {"name": "Carla (Critic)", "role": "critic"},
-    {"name": "Finn (Fact-Checker)", "role": "fact_checker"},
-    {"name": "Quinn (Quality Improver)", "role": "quality_improver"},
-]
-
-
-def seed_builtin_agents(conn) -> int:
-    """Insert builtin agents into builtin_agents table if not present."""
-    p = _param_style()
-    ts = now()
-    seeded = 0
-    for agent in BUILTIN_AGENTS:
-        existing = _fetchone(conn, f"SELECT id FROM builtin_agents WHERE name = {p}", (agent["name"],))
-        if existing:
-            continue
-        agent_id = _execute_returning(
-            conn,
-            f"INSERT INTO builtin_agents (name, role, created_at, last_seen_at) "
-            f"VALUES ({p}, {p}, {p}, {p}) RETURNING id",
-            (agent["name"], agent["role"], ts, ts),
-        )
-        if agent_id:
-            _create_agent_overview_conn(conn, agent_id, agent["name"], role="builtin")
-            seeded += 1
-    return seeded
-
-
-def update_agent_activity(agent_name: str, action: str = ""):
-    """Update last_seen_at and last_action for any agent (builtin or external)."""
-    conn = get_db()
-    ts = now()
-    p = _param_style()
-    # Try builtin first
-    updated = _execute(
-        conn,
-        f"UPDATE builtin_agents SET last_seen_at = {p}, last_action = {p}, last_action_at = {p} WHERE name = {p}",
-        (ts, action, ts, agent_name),
-    )
-    if not updated or updated == 0:
-        _execute(
-            conn,
-            f"UPDATE external_agents SET last_seen_at = {p}, last_action = {p}, last_action_at = {p} WHERE name = {p}",
-            (ts, action, ts, agent_name),
-        )
-    conn.commit()
-    conn.close()
-
-
 def create_article(
     title: str,
     content: str,
@@ -479,6 +462,7 @@ def create_article(
     owner_agent_id: int | None = None,
     needs_review: bool = False,
     category: str = "science",
+    tool_spec_json: str | None = None,
 ) -> dict | None:
     conn = get_db()
     title = sanitize(title)
@@ -495,17 +479,19 @@ def create_article(
     # Ensure category column exists
     if not _column_exists(conn, "articles", "category"):
         _execute(conn, "ALTER TABLE articles ADD COLUMN category TEXT NOT NULL DEFAULT 'science'")
+    if not _column_exists(conn, "articles", "tool_spec_json"):
+        _execute(conn, "ALTER TABLE articles ADD COLUMN tool_spec_json TEXT")
     try:
         article_id = _execute_returning(
             conn,
-            f"INSERT INTO articles (title, slug, content, created_at, updated_at, article_kind, owner_agent_id, needs_review, category) "
-            f"VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}){returning}",
-            (title, slug, content, ts, ts, article_kind, owner_agent_id, 1 if needs_review else 0, category),
+            f"INSERT INTO articles (title, slug, content, created_at, updated_at, article_kind, owner_agent_id, needs_review, category, tool_spec_json) "
+            f"VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}){returning}",
+            (title, slug, content, ts, ts, article_kind, owner_agent_id, 1 if needs_review else 0, category, tool_spec_json),
         )
         _execute(conn, f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                  (article_id, content, agent_name, summary, ts))
         conn.commit()
-        return {"id": article_id, "title": title, "slug": slug}
+        return {"id": article_id, "title": title, "slug": slug, "tool_spec_json": tool_spec_json}
     except Exception:
         conn.rollback()
         return None
@@ -527,12 +513,27 @@ def get_article_by_id(article_id: int) -> dict | None:
     return row
 
 
-def update_article(article_id: int, content: str, agent_name: str, summary: str = "") -> bool:
+def update_article(
+    article_id: int,
+    content: str,
+    agent_name: str,
+    summary: str = "",
+    *,
+    tool_spec_json: str | None = None,
+    update_tool_spec: bool = False,
+) -> bool:
     conn = get_db()
     ts = now()
     p = _param_style()
-    _execute(conn, f"UPDATE articles SET content = {p}, updated_at = {p} WHERE id = {p}",
-             (content, ts, article_id))
+    if update_tool_spec:
+        _execute(
+            conn,
+            f"UPDATE articles SET content = {p}, updated_at = {p}, tool_spec_json = {p} WHERE id = {p}",
+            (content, ts, tool_spec_json, article_id),
+        )
+    else:
+        _execute(conn, f"UPDATE articles SET content = {p}, updated_at = {p} WHERE id = {p}",
+                 (content, ts, article_id))
     _execute(conn, f"INSERT INTO revisions (article_id, content, agent_name, summary, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
              (article_id, content, agent_name, summary, ts))
     conn.commit()
@@ -579,7 +580,7 @@ def get_talk_messages(article_id: int) -> list[dict]:
     return rows
 
 
-def register_external_agent(name: str) -> dict | None:
+def register_external_agent(name: str, user_id: str | None = None) -> dict | None:
     conn = get_db()
     ts = now()
     name = sanitize(name)
@@ -597,8 +598,11 @@ def register_external_agent(name: str) -> dict | None:
 
     try:
         agent_id = _execute_returning(
-            conn, f"INSERT INTO external_agents (name, api_key_hash, created_at, last_seen_at) VALUES ({p}, {p}, {p}, {p}){returning}",
-            (name, api_key_hash, ts, ts))
+            conn,
+            f"INSERT INTO external_agents (name, api_key_hash, created_at, last_seen_at, user_id) "
+            f"VALUES ({p}, {p}, {p}, {p}, {p}){returning}",
+            (name, api_key_hash, ts, ts, user_id),
+        )
         overview = _create_agent_overview_conn(conn, agent_id, name)
         if not overview:
             conn.rollback()
@@ -621,8 +625,11 @@ def register_external_agent(name: str) -> dict | None:
 def verify_external_agent(api_key: str) -> dict | None:
     conn = get_db()
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    row = _fetchone(conn, f"SELECT id, name FROM external_agents WHERE api_key_hash = {_param_style()} AND is_active = 1",
-                    (api_key_hash,))
+    row = _fetchone(
+        conn,
+        f"SELECT id, name, user_id FROM external_agents WHERE api_key_hash = {_param_style()} AND is_active = 1",
+        (api_key_hash,),
+    )
     if row:
         ts = now()
         p = _param_style()
@@ -630,6 +637,47 @@ def verify_external_agent(api_key: str) -> dict | None:
         conn.commit()
     conn.close()
     return row
+
+
+def current_usage_period() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def record_server_tool_invoke(user_id: str) -> int:
+    period = current_usage_period()
+    conn = get_db()
+    p = _param_style()
+    _execute(
+        conn,
+        f"""
+        INSERT INTO user_server_invoke_usage (user_id, period, invoke_count)
+        VALUES ({p}, {p}, 1)
+        ON CONFLICT(user_id, period) DO UPDATE SET
+            invoke_count = invoke_count + 1
+        """,
+        (user_id, period),
+    )
+    row = _fetchone(
+        conn,
+        f"SELECT invoke_count FROM user_server_invoke_usage WHERE user_id = {p} AND period = {p}",
+        (user_id, period),
+    )
+    conn.commit()
+    conn.close()
+    return int(row["invoke_count"]) if row else 0
+
+
+def get_server_invoke_count(user_id: str, period: str | None = None) -> int:
+    period = period or current_usage_period()
+    conn = get_db()
+    p = _param_style()
+    row = _fetchone(
+        conn,
+        f"SELECT invoke_count FROM user_server_invoke_usage WHERE user_id = {p} AND period = {p}",
+        (user_id, period),
+    )
+    conn.close()
+    return int(row["invoke_count"]) if row else 0
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -702,45 +750,48 @@ def set_agent_presence(api_key: str, status: str) -> dict | None:
 
 def get_external_agents_status() -> list[dict]:
     conn = get_db()
-    rows = _fetchall(
+    external_rows = _fetchall(
         conn,
         """SELECT e.id, e.name, e.created_at, e.last_seen_at, e.presence_status, e.is_active, a.slug AS overview_slug
            FROM external_agents e
            LEFT JOIN articles a ON a.id = e.overview_article_id
            ORDER BY e.name ASC""",
     )
-    builtin_rows = _fetchall(
-        conn,
-        """SELECT b.id, b.name, b.created_at, b.last_seen_at, b.last_action, b.last_action_at,
-                  a.slug AS overview_slug
-           FROM builtin_agents b
-           LEFT JOIN articles a ON a.title = b.name || ' (Agent Overview)'
-           ORDER BY b.name ASC""",
-    )
+    builtin_rows = []
+    if _table_exists(conn, "builtin_agents"):
+        builtin_rows = _fetchall(
+            conn,
+            """SELECT b.id, b.name, b.created_at, b.last_seen_at, b.last_action, b.last_action_at, a.slug AS overview_slug
+               FROM builtin_agents b
+               LEFT JOIN articles a ON a.id = b.overview_article_id
+               ORDER BY b.name ASC""",
+        )
     conn.close()
 
     threshold = config.AGENT_ONLINE_THRESHOLD_SECONDS
     now_dt = datetime.now(timezone.utc)
     agents = []
 
-    # Builtin agents — always online
     for row in builtin_rows:
+        overview_slug = row.get("overview_slug")
         agents.append({
             "id": row["id"],
             "name": row["name"],
             "role": "builtin",
             "created_at": row["created_at"],
-            "last_seen_at": row["last_seen_at"],
+            "last_seen_at": row.get("last_seen_at"),
             "last_action": row.get("last_action"),
             "last_action_at": row.get("last_action_at"),
-            "online": True,
             "builtin": True,
-            "overview_slug": row.get("overview_slug"),
-            "overview_url": f"/wiki/{row['overview_slug']}" if row.get("overview_slug") else None,
+            "presence": "active",
+            "presence_mode": "builtin",
+            "presence_label": PRESENCE_LABELS["active"],
+            "online": True,
+            "overview_slug": overview_slug,
+            "overview_url": f"/wiki/{overview_slug}" if overview_slug else None,
         })
 
-    # External agents — use presence logic
-    for row in rows:
+    for row in external_rows:
         if not row.get("is_active"):
             continue
         last_seen = row.get("last_seen_at")
@@ -752,15 +803,72 @@ def get_external_agents_status() -> list[dict]:
             "role": "external",
             "created_at": row["created_at"],
             "last_seen_at": last_seen,
+            "builtin": False,
             "overview_slug": overview_slug,
             "overview_url": f"/wiki/{overview_slug}" if overview_slug else None,
-            "builtin": False,
             **presence,
         })
 
     order = {"active": 0, "afk": 1, "offline": 2}
-    agents.sort(key=lambda a: (0 if a.get("builtin") else order.get(a.get("presence", "offline"), 9), a["last_seen_at"] or "", a["name"]))
+    agents.sort(
+        key=lambda a: (
+            0 if a.get("builtin") else 1,
+            order.get(a.get("presence", "offline"), 9),
+            a.get("last_seen_at") or "",
+            a["name"],
+        )
+    )
     return agents
+
+
+def get_external_agents_by_user_id(user_id: str) -> list[dict]:
+    conn = get_db()
+    rows = _fetchall(
+        conn,
+        """SELECT e.id, e.name, e.created_at, e.last_seen_at, e.presence_status, e.is_active, a.slug AS overview_slug
+           FROM external_agents e
+           LEFT JOIN articles a ON a.id = e.overview_article_id
+           WHERE e.user_id = """ + _param_style() + """ AND e.is_active = 1
+           ORDER BY e.created_at DESC""",
+        (user_id,),
+    )
+    conn.close()
+
+    agents = []
+    for row in rows:
+        overview_slug = row.get("overview_slug")
+        presence = resolve_agent_presence(row.get("last_seen_at"), row.get("presence_status"))
+        agents.append({
+            "id": row["id"],
+            "name": row["name"],
+            "created_at": row["created_at"],
+            "last_seen_at": row.get("last_seen_at"),
+            "overview_slug": overview_slug,
+            "overview_url": f"/wiki/{overview_slug}" if overview_slug else None,
+            **presence,
+        })
+    return agents
+
+
+def link_external_agent_to_user(api_key: str, user_id: str) -> str | None:
+    agent = get_external_agent_details(api_key)
+    if not agent or not agent.get("is_active"):
+        return None
+    existing_user = agent.get("user_id")
+    if existing_user and existing_user != user_id:
+        return "conflict"
+    if existing_user == user_id:
+        return "already"
+    conn = get_db()
+    p = _param_style()
+    _execute(
+        conn,
+        f"UPDATE external_agents SET user_id = {p} WHERE id = {p} AND user_id IS NULL",
+        (user_id, agent["id"]),
+    )
+    conn.commit()
+    conn.close()
+    return "linked"
 
 
 def get_external_agent_by_name(name: str) -> dict | None:
@@ -796,7 +904,7 @@ def get_external_agent_details(api_key: str) -> dict | None:
     row = _fetchone(
         conn,
         """SELECT e.id, e.name, e.created_at, e.is_active, e.last_seen_at, e.presence_status,
-                  e.overview_article_id, a.slug AS overview_slug
+                  e.overview_article_id, e.user_id, a.slug AS overview_slug
            FROM external_agents e
            LEFT JOIN articles a ON a.id = e.overview_article_id
            WHERE e.api_key_hash = """ + _param_style(),
@@ -1016,7 +1124,12 @@ def count_improvements(article_id: int) -> int:
     """Count how many times Quinn has improved a given article."""
     conn = get_db()
     p = _param_style()
-    row = _fetchone(conn, f"SELECT COUNT(*) as cnt FROM agent_logs WHERE article_id = {p} AND agent_name = 'Quality Improver Quinn' AND action = 'improve_article'", (article_id,))
+    row = _fetchone(
+        conn,
+        f"SELECT COUNT(*) as cnt FROM agent_logs WHERE article_id = {p} "
+        f"AND agent_name = 'Quality Improver Quinn' AND action = 'improve_article'",
+        (article_id,),
+    )
     conn.close()
     return row["cnt"] if row else 0
 
@@ -1045,9 +1158,40 @@ def get_recent_changes(limit: int = 20) -> list[dict]:
     rows = _fetchall(conn,
         f"""SELECT r.id, r.article_id, a.title, a.slug, r.agent_name, r.summary, r.timestamp
            FROM revisions r JOIN articles a ON r.article_id = a.id
-           WHERE a.article_kind != 'agent_overview'
+           WHERE (a.article_kind = 'encyclopedia' OR a.article_kind IS NULL)
            ORDER BY r.timestamp DESC LIMIT {p}""",
         (limit,))
+    conn.close()
+    return rows
+
+
+def get_aitool_recent_changes(limit: int = 20) -> list[dict]:
+    conn = get_db()
+    p = _param_style()
+    rows = _fetchall(
+        conn,
+        f"""SELECT r.id, r.article_id, a.title, a.slug, r.agent_name, r.summary, r.timestamp
+           FROM revisions r JOIN articles a ON r.article_id = a.id
+           WHERE a.article_kind = 'aitool'
+           ORDER BY r.timestamp DESC LIMIT {p}""",
+        (limit,),
+    )
+    conn.close()
+    return rows
+
+
+def get_aitools(limit: int | None = None) -> list[dict]:
+    conn = get_db()
+    query = (
+        "SELECT id, title, slug, updated_at, article_kind FROM articles "
+        "WHERE article_kind = 'aitool' "
+        "ORDER BY updated_at DESC"
+    )
+    if limit is not None:
+        query += f" LIMIT {_param_style()}"
+        rows = _fetchall(conn, query, (limit,))
+    else:
+        rows = _fetchall(conn, query)
     conn.close()
     return rows
 
@@ -1072,6 +1216,76 @@ def get_migration_status() -> dict:
     from migrations.runner import get_migration_status as _status
 
     return _status()
+
+
+def search_aitools(query: str, limit: int = 25) -> list[dict]:
+    q = query.strip()
+    if not q or len(q) < 2:
+        return []
+    conn = get_db()
+    p = _param_style()
+    pattern = f"%{q}%"
+    if config.is_postgres():
+        rows = _fetchall(
+            conn,
+            f"""SELECT id, title, slug, updated_at, article_kind
+                FROM articles
+                WHERE article_kind = 'aitool'
+                  AND (title ILIKE {p} OR content ILIKE {p})
+                ORDER BY updated_at DESC
+                LIMIT {p}""",
+            (pattern, pattern, limit),
+        )
+    else:
+        rows = _fetchall(
+            conn,
+            f"""SELECT id, title, slug, updated_at, article_kind
+                FROM articles
+                WHERE article_kind = 'aitool'
+                  AND (title LIKE {p} OR content LIKE {p})
+                ORDER BY updated_at DESC
+                LIMIT {p}""",
+            (pattern, pattern, limit),
+        )
+    conn.close()
+    return rows
+
+
+def check_aitool_title(title: str) -> dict:
+    slug = slugify(title)
+    existing = get_article(slug)
+    if existing and existing.get("article_kind") == "agent_overview":
+        existing = None
+    conn = get_db()
+    p = _param_style()
+    pattern = f"%{title.strip()}%"
+    if config.is_postgres():
+        similar = _fetchall(
+            conn,
+            f"""SELECT title, slug FROM articles
+                WHERE article_kind = 'aitool'
+                  AND title ILIKE {p}
+                ORDER BY title ASC LIMIT 10""",
+            (pattern,),
+        )
+    else:
+        similar = _fetchall(
+            conn,
+            f"""SELECT title, slug FROM articles
+                WHERE article_kind = 'aitool'
+                  AND title LIKE {p}
+                ORDER BY title ASC LIMIT 10""",
+            (pattern,),
+        )
+    conn.close()
+    similar = [s for s in similar if s["slug"] != slug]
+    return {
+        "title": title,
+        "slug": slug,
+        "exists": existing is not None,
+        "existing_slug": existing["slug"] if existing else None,
+        "similar": similar,
+    }
 
 
 def search_articles(query: str, limit: int = 25) -> list[dict]:

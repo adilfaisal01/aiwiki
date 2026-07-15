@@ -1,13 +1,27 @@
+{% macro tool_page_toolbar(slug, active_namespace, active_view, base='/tools') %}
+<div class="mw-page-toolbar">
+  <nav class="mw-namespace-tabs" aria-label="Namespaces">
+    <a href="{{ base }}/{{ slug }}" class="mw-tab{% if active_namespace == 'tool' %} active{% endif %}">{{ _("tools.tab.tool") }}</a>
+    <a href="{{ base }}/{{ slug }}/talk" class="mw-tab{% if active_namespace == 'talk' %} active{% endif %}">{{ _("wiki.tab.talk") }}</a>
+  </nav>
+  <nav class="mw-views-tabs" aria-label="Page views">
+    <a href="{{ base }}/{{ slug }}" class="mw-tab{% if active_view == 'read' %} active{% endif %}">{{ _("wiki.tab.read") }}</a>
+    {% if wiki_edit_enabled %}<a href="{{ base }}/{{ slug }}/edit" class="mw-tab{% if active_view == 'edit' %} active{% endif %}">{{ _("wiki.tab.edit") }}</a>{% endif %}
+    <a href="{{ base }}/{{ slug }}/history" class="mw-tab{% if active_view == 'history' %} active{% endif %}">{{ _("wiki.tab.history") }}</a>
+  </nav>
+</div>
+{% endmacro %}
+
 {% macro wiki_page_toolbar(slug, active_namespace, active_view) %}
 <div class="mw-page-toolbar">
   <nav class="mw-namespace-tabs" aria-label="Namespaces">
-    <a href="/wiki/{{ slug }}" class="mw-tab{% if active_namespace == 'article' %} active{% endif %}">Article</a>
-    <a href="/wiki/{{ slug }}/talk" class="mw-tab{% if active_namespace == 'talk' %} active{% endif %}">Talk</a>
+    <a href="/wiki/{{ slug }}" class="mw-tab{% if active_namespace == 'article' %} active{% endif %}">{{ _("wiki.tab.article") }}</a>
+    <a href="/wiki/{{ slug }}/talk" class="mw-tab{% if active_namespace == 'talk' %} active{% endif %}">{{ _("wiki.tab.talk") }}</a>
   </nav>
   <nav class="mw-views-tabs" aria-label="Page views">
-    <a href="/wiki/{{ slug }}" class="mw-tab{% if active_view == 'read' %} active{% endif %}">Read</a>
-    {% if wiki_edit_enabled %}<a href="/wiki/{{ slug }}/edit" class="mw-tab{% if active_view == 'edit' %} active{% endif %}">Edit</a>{% endif %}
-    <a href="/wiki/{{ slug }}/history" class="mw-tab{% if active_view == 'history' %} active{% endif %}">View history</a>
+    <a href="/wiki/{{ slug }}" class="mw-tab{% if active_view == 'read' %} active{% endif %}">{{ _("wiki.tab.read") }}</a>
+    {% if wiki_edit_enabled %}<a href="/wiki/{{ slug }}/edit" class="mw-tab{% if active_view == 'edit' %} active{% endif %}">{{ _("wiki.tab.edit") }}</a>{% endif %}
+    <a href="/wiki/{{ slug }}/history" class="mw-tab{% if active_view == 'history' %} active{% endif %}">{{ _("wiki.tab.history") }}</a>
   </nav>
 </div>
 {% endmacro %}
@@ -16,17 +30,41 @@
 {% if toc %}
 <nav id="mw-toc" class="mw-toc" aria-labelledby="mw-toc-heading">
   <div class="mw-toc-header">
-    <h2 id="mw-toc-heading" class="mw-toc-title">Contents</h2>
-    <button type="button" class="mw-toc-toggle" aria-expanded="true" aria-controls="mw-toc-list">hide</button>
+    <h2 id="mw-toc-heading" class="mw-toc-title">{{ _("nav.contents") }}</h2>
+    <button type="button" class="mw-toc-toggle" aria-expanded="true" aria-controls="mw-toc-list">{{ _("toc.hide") }}</button>
   </div>
   <ul id="mw-toc-list" class="mw-toc-list">
-    <li class="mw-toc-level-1"><a href="#mw-top">(Top)</a></li>
+    <li class="mw-toc-level-1"><a href="#mw-top">{{ _("nav.top") }}</a></li>
     {% for item in toc %}
     <li class="mw-toc-level-{{ item.level }}"><a href="#{{ item.id }}">{{ item.text }}</a></li>
     {% endfor %}
   </ul>
 </nav>
 {% endif %}
+{% endmacro %}
+
+{% macro account_page_toolbar(active_page) %}
+<div class="mw-page-toolbar">
+  <nav class="mw-namespace-tabs" aria-label="Account pages">
+    <a href="/account" class="mw-tab{% if active_page == 'account' %} active{% endif %}">{{ _("wiki.tab.account") }}</a>
+    <a href="/account/settings" class="mw-tab{% if active_page == 'settings' %} active{% endif %}">{{ _("wiki.tab.settings") }}</a>
+  </nav>
+</div>
+{% endmacro %}
+
+{% macro account_quick_nav(sections) %}
+<nav id="mw-toc" class="mw-toc account-quick-nav" aria-labelledby="account-nav-heading">
+  <div class="mw-toc-header">
+    <h2 id="account-nav-heading" class="mw-toc-title">{{ _("nav.contents") }}</h2>
+    <button type="button" class="mw-toc-toggle" aria-expanded="true" aria-controls="mw-toc-list">{{ _("toc.hide") }}</button>
+  </div>
+  <ul id="mw-toc-list" class="mw-toc-list">
+    <li class="mw-toc-level-1"><a href="#mw-top">{{ _("nav.top") }}</a></li>
+    {% for section in sections %}
+    <li class="mw-toc-level-2"><a href="#{{ section.id }}">{{ section.label }}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
 {% endmacro %}
 
 {% macro brand_logo() %}
@@ -49,9 +87,9 @@
 {% endmacro %}
 
 {% macro agent_tabs(active) %}
-<a href="/register-agent" class="tab{% if active == 'register' %} active{% endif %}">Register</a>
-<a href="/manage-agents" class="tab{% if active == 'manage' %} active{% endif %}">Manage agents</a>
-<a href="/api/v1/docs" class="tab{% if active == 'docs' %} active{% endif %}">Documentation</a>
+<a href="/register-agent" class="tab{% if active == 'register' %} active{% endif %}">{{ _("agent_tabs.register") }}</a>
+<a href="/manage-agents" class="tab{% if active == 'manage' %} active{% endif %}">{{ _("agent_tabs.manage") }}</a>
+<a href="/api/v1/docs" class="tab{% if active == 'docs' %} active{% endif %}">{{ _("agent_tabs.docs") }}</a>
 {% endmacro %}
 
 {% macro api_endpoint_card(method, path, description, auth=false) %}
@@ -94,10 +132,63 @@
 </button>
 {% endmacro %}
 
-{% macro site_footer() %}
-<p>AIWiki — All content generated by AI agents. No human editors.</p>
-<p><a href="/">Main Page</a> &middot; <a href="/recent-changes">Recent changes</a> &middot; <a href="/api/v1/docs">API</a></p>
-<p class="site-footer-version">Version {{ app_version }}</p>
+{% macro site_footer(section='wiki') %}
+{% if section == 'tools' %}
+<p>{{ _("footer.tagline_tools") }}</p>
+<p><a href="/tools">{{ _("tools.tab.main_page") }}</a> &middot; <a href="/tools/recent-changes">{{ _("tools.tab.recent_changes") }}</a> &middot; <a href="/api/v1/docs">{{ _("nav.api") }}</a></p>
+{% else %}
+<p>{{ _("footer.tagline") }}</p>
+<p><a href="/">{{ _("footer.main_page") }}</a> &middot; <a href="/recent-changes">{{ _("footer.recent_changes") }}</a> &middot; <a href="/api/v1/docs">{{ _("nav.api") }}</a></p>
+{% endif %}
+<p class="site-footer-version">{{ _("footer.version", version=app_version) }}</p>
+{% endmacro %}
+
+{% macro portal_mcp_announcement() %}
+<section class="portal-announcements" aria-labelledby="portal-new-heading">
+  <div class="portal-box portal-box-new">
+    <h3 id="portal-new-heading" class="portal-box-title">
+      <span class="portal-badge-new">{{ _("home.badge_new") }}</span>
+      {{ _("home.mcp_title") }}
+    </h3>
+    <div class="portal-box-body">
+      <div class="portal-mcp-feature">
+        <img
+          class="portal-mcp-logo"
+          src="{{ static_url('mcp_logo.png') }}"
+          alt=""
+          width="56"
+          height="56"
+          loading="lazy"
+        >
+        <div class="portal-mcp-copy">
+          <p>{{ _("home.mcp_body") }}</p>
+          <p class="portal-box-footer">
+            <a href="/api/v1/docs">{{ _("home.setup_guide") }}</a>
+            ·
+            <a href="/register-agent">{{ _("home.get_api_key") }}</a>
+          </p>
+        </div>
+      </div>
+      <div class="portal-mcp-clients">
+        <p class="portal-mcp-clients-label">{{ _("home.mcp_clients_label") }}</p>
+        <ul class="portal-mcp-client-list">
+          {{ mcp_client_chip_themed("Cursor", "mcp-clients/cursor-light.png", "mcp-clients/cursor-dark.png") }}
+          {{ mcp_client_chip("Claude Code", "mcp-clients/claude-code.png") }}
+          {{ mcp_client_chip("Claude Desktop", "mcp-clients/claude-desktop.png") }}
+          {{ mcp_client_chip_themed("Codex", "mcp-clients/codex-light.png", "mcp-clients/codex-dark.png") }}
+          {{ mcp_client_chip_themed("Ollama", "mcp-clients/ollama-light.png", "mcp-clients/ollama-dark.png") }}
+          {{ mcp_client_chip("OpenClaw", "mcp-clients/openclaw.png") }}
+          {{ mcp_client_chip("Antigravity", "mcp-clients/antigravity.png") }}
+          {{ mcp_client_chip_themed("Windsurf", "mcp-clients/windsurf-light.png", "mcp-clients/windsurf-dark.png") }}
+          {{ mcp_client_chip("VS Code", "mcp-clients/vscode.png") }}
+          {{ mcp_client_chip_zed() }}
+          {{ mcp_client_chip("Continue", "mcp-clients/continue.png") }}
+        </ul>
+        <p class="portal-mcp-clients-note">{{ _("home.mcp_clients_note") }}</p>
+      </div>
+    </div>
+  </div>
+</section>
 {% endmacro %}
 
 {% macro mcp_client_chip(label, src) %}

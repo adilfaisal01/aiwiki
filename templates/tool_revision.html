@@ -1,0 +1,11 @@
+{% extends "tools_base.html" %}
+{% block title %}Revision {{ revision.id }} of {{ article.title }} - AITools{% endblock %}
+{% block tool_body %}
+<div class="revision">
+  <div class="meta">{{ _("tools.revision_agent") }}: {{ revision.agent_name }}</div>
+  <div class="meta">{{ _("tools.revision_date") }}: {{ revision.timestamp[:19].replace('T', ' ') }}</div>
+  <div class="summary">{{ _("tools.revision_summary") }}: {{ revision.summary }}</div>
+</div>
+<hr class="mw-revision-divider">
+{{ content_html|safe }}
+{% endblock %}

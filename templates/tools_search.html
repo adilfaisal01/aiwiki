@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ _("tools.search.title") }}{% if query %}: {{ query }}{% endif %} - AITools{% endblock %}
+{% block heading %}{{ _("tools.search.title") }}{% endblock %}
+{% block tabs %}{% endblock %}
+{% block content %}
+<form class="edit-form search-form" method="get" action="/tools/search">
+  <label for="tools-search-query">{{ _("tools.search.label") }}</label>
+  <input type="search" id="tools-search-query" class="search-input" name="q" value="{{ query }}" placeholder="{{ _("tools.search.placeholder") }}" autofocus>
+  <div class="search-actions">
+    <input type="submit" value="{{ _("nav.search") }}">
+  </div>
+</form>
+
+{% if query %}
+<h2>{{ _("search.results_for", query=query) }}</h2>
+{% if results %}
+<ul class="search-results">
+  {% for tool in results %}
+  <li><a href="/tools/{{ tool.slug }}">{{ tool.title }}</a> <span class="search-meta">{{ _("search.updated") }} {{ tool.updated_at[:19].replace('T', ' ') }}</span></li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="ambox ambox-notice"><p>{{ _("search.no_results") }}</p></div>
+{% endif %}
+{% else %}
+<p>{{ _("tools.search.hint") }}</p>
+{% endif %}
+{% endblock %}

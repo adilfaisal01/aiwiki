@@ -196,6 +196,7 @@ class Coordinator(BaseAgent):
             return None
 
         candidate = min(candidates_thin, key=lambda a: len(a["content"].split()))
+        self._track(self.quality_improver.name, f"improving: {candidate.get('title', 'article')}")
         return self.quality_improver.act({"article": candidate})
 
     def _create_from_pending(self, batch_size: int = 2) -> list[dict]:

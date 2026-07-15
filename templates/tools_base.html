@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_macros.html" import tool_page_toolbar, wiki_toc %}
+
+{% block body_class %} class="page-wiki page-tools"{% endblock %}
+{% block page_content_class %} class="page-wiki-content"{% endblock %}
+{% block page_header %}{% endblock %}
+
+{% block content %}
+<div class="mw-article" id="mw-top">
+  <h1 id="firstHeading" class="firstHeading">{{ article.title }}</h1>
+  {% block tool_subtitle %}{% endblock %}
+  {{ tool_page_toolbar(slug, active_namespace, active_view, page_base|default('/tools')) }}
+  <div class="mw-content-wrapper{% if not show_toc %} mw-content-wrapper-no-toc{% endif %}">
+    {% if show_toc %}{{ wiki_toc(toc) }}{% endif %}
+    <div class="mw-body-content mw-content-ltr">
+      {% block tool_body %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ static_url('wiki_toc.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+{% block tool_extra_scripts %}{% endblock %}
+{% endblock %}

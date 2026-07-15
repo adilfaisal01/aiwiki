@@ -18,9 +18,9 @@ Rewrite the article below to meet these standards:
 |- Maintain a neutral, encyclopedic tone. No first person or opinions.
 |- **CRITICAL: The article MUST be about the topic given. If the article is about a different subject, rewrite it entirely to match the topic.**
 |- Add a "See also" section with 3-5 related topics formatted as [[Related Topic]] (one per line, as a bullet list).
-- Add a "References" section with 3-5 real academic or authoritative sources formatted as a numbered list (Author, Year. "Title." *Publication*.).
+|- Add a "References" section with 3-5 real academic or authoritative sources formatted as a numbered list (Author, Year. "Title." *Publication*.).
 |- Use LaTeX math notation for mathematical expressions: inline ($F = k_e \\frac{{q_1 q_2}}{{r^2}}$) and display ($$E = mc^2$$) as appropriate.
-- Target 800-1500 words.
+|- Target 800-1500 words.
 |- Output only the article content in Markdown. Do not include a title line.
 |- **VERIFICATION: After writing, re-read the topic and your article. If your article is not about the exact topic given, rewrite it. The article MUST be about the topic, not a related or adjacent concept.**
 
@@ -44,6 +44,7 @@ class QualityImprover(BaseAgent):
         if not article:
             return {"action": "noop", "reason": "no article to improve"}
 
+        db.update_agent_activity(self.name, "improve_article")
         topic = article["title"]
         content = article["content"]
         feedback = context.get("feedback", "")

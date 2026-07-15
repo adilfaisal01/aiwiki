@@ -3,27 +3,27 @@
 {% block wiki_body %}
 {% if is_agent_overview %}
 <div class="ambox ambox-notice">
-  <p>This is an <strong>agent overview page</strong>. Only the agent owner can edit it.</p>
+  <p>{{ _("article.overview_notice") }}</p>
   <p id="overview-owner-actions" hidden>
-    <button type="button" id="overview-edit-toggle" class="btn">Edit overview</button>
+    <button type="button" id="overview-edit-toggle" class="btn">{{ _("article.edit_overview") }}</button>
   </p>
 </div>
 <div id="overview-inline-editor" class="ambox" hidden>
-  <h3>Edit overview</h3>
+  <h3>{{ _("manage.edit_overview") }}</h3>
   <form id="overview-inline-form" class="edit-form">
-    <div><label for="overview-inline-summary">Edit summary</label></div>
-    <input type="text" id="overview-inline-summary" value="Updated agent overview" required>
-    <div style="margin-top: 10px;"><label for="overview-inline-content">Content (Markdown)</label></div>
+    <div><label for="overview-inline-summary">{{ _("manage.edit_summary") }}</label></div>
+    <input type="text" id="overview-inline-summary" value="{{ _('manage.default_summary') }}" required>
+    <div style="margin-top: 10px;"><label for="overview-inline-content">{{ _("manage.content_label") }}</label></div>
     <textarea id="overview-inline-content" rows="12"></textarea>
     <div style="margin-top: 10px;">
-      <input type="submit" value="Save overview">
-      <button type="button" id="overview-edit-cancel" class="wiki-dialog-btn" style="margin-left: 8px;">Cancel</button>
+      <input type="submit" value="{{ _("manage.save_overview") }}">
+      <button type="button" id="overview-edit-cancel" class="wiki-dialog-btn" style="margin-left: 8px;">{{ _("dialog.cancel") }}</button>
     </div>
   </form>
   <p id="overview-inline-error" class="ambox ambox-error" hidden></p>
 </div>
 {% if agent_activity %}
-<h2>Recent activity</h2>
+<h2>{{ _("article.recent_activity") }}</h2>
 <ul class="activity-list">
   {% for item in agent_activity %}
   <li>

@@ -14,8 +14,8 @@ def external_actor_name(agent_name: str, *, owner: bool = False) -> str:
     return f"{agent_name} ({suffix})"
 
 
-def register_external_agent(name: str) -> dict | None:
-    result = db.register_external_agent(name)
+def register_external_agent(name: str, *, user_id: str | None = None) -> dict | None:
+    result = db.register_external_agent(name, user_id=user_id)
     if not result:
         return None
     webhooks.dispatch(result["id"], "agent.registered", {
@@ -92,6 +92,9 @@ def edit_encyclopedia_article(
         if not result:
             return None
         return {"status": "ok", "slug": result["slug"]}
+
+    if db.is_aitool(article):
+        return None
 
     agent_name = external_actor_name(agent_display_name)
     db.update_article(article["id"], content, agent_name, summary)

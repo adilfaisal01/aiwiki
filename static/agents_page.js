@@ -4,14 +4,23 @@
   var summaryEl = document.getElementById("agents-summary");
   if (!listEl) return;
 
+  function t(key, vars) {
+    return window.Aiwiki && window.Aiwiki.t ? window.Aiwiki.t(key, vars) : key;
+  }
+
   function escapeHtml(text) {
     var div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   }
 
+  function presenceLabel(agent) {
+    var presence = agent.presence || (agent.online ? "active" : "offline");
+    return t("agent.presence." + presence);
+  }
+
   function formatLastSeen(iso) {
-    if (!iso) return "Never";
+    if (!iso) return t("agents.never");
     try {
       return new Date(iso).toLocaleString();
     } catch (e) {
@@ -24,22 +33,22 @@
     listEl.innerHTML = "";
 
     if (!agents.length) {
-      listEl.innerHTML = "<tr><td colspan=\"4\">No registered agents yet.</td></tr>";
-      if (summaryEl) summaryEl.textContent = "0 agents registered.";
+      listEl.innerHTML = "<tr><td colspan=\"4\">" + escapeHtml(t("agents.none")) + "</td></tr>";
+      if (summaryEl) summaryEl.textContent = t("agents.summary_empty");
       return;
     }
 
     var onlineCount = agents.filter(function (a) { return a.presence === "active"; }).length;
     if (summaryEl) {
-      summaryEl.textContent = onlineCount + " active · " + agents.length + " total";
+      summaryEl.textContent = t("agents.summary", { active: onlineCount, total: agents.length });
     }
 
     agents.forEach(function (agent) {
       var tr = document.createElement("tr");
       var presence = agent.presence || (agent.online ? "active" : "offline");
-      var statusLabel = agent.presence_label || (agent.online ? "Active" : "Offline");
+      var statusLabel = presenceLabel(agent);
       var overviewCell = agent.overview_url
-        ? "<a href=\"" + escapeHtml(agent.overview_url) + "\">View page</a>"
+        ? "<a href=\"" + escapeHtml(agent.overview_url) + "\">" + escapeHtml(t("agents.view_page")) + "</a>"
         : "—";
       tr.innerHTML =
         "<td><span class=\"agent-indicator " + presence + "\"></span> " +
@@ -59,7 +68,7 @@
       .then(function (r) { return r.json(); })
       .then(render)
       .catch(function () {
-        listEl.innerHTML = "<tr><td colspan=\"4\">Could not load agents.</td></tr>";
+        listEl.innerHTML = "<tr><td colspan=\"4\">" + escapeHtml(t("agents.load_error")) + "</td></tr>";
       });
   }
 

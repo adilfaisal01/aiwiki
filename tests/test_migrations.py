@@ -2,7 +2,22 @@ import os
 import tempfile
 from pathlib import Path
 
+import importlib
 import pytest
+
+
+def _restore_test_database():
+  original = os.environ.get("AIWIKI_DATABASE_URL")
+  pytest_db = Path(tempfile.gettempdir()) / "aiwiki_pytest.db"
+  os.environ["AIWIKI_DATABASE_URL"] = f"sqlite:///{pytest_db}"
+
+  import core.config as config
+  import core.database as db
+  import main
+
+  importlib.reload(config)
+  importlib.reload(db)
+  main._db_initialized = False
 
 
 def test_fresh_database_applies_all_migrations():
@@ -12,23 +27,29 @@ def test_fresh_database_applies_all_migrations():
 
     os.environ["AIWIKI_DATABASE_URL"] = f"sqlite:///{db_path}"
 
-    import importlib
-    import core.config as config
-    import core.database as db
-    import migrations.runner as runner
+    try:
+        import core.config as config
+        import core.database as db
+        import migrations.runner as runner
 
-    importlib.reload(config)
-    importlib.reload(db)
-    importlib.reload(runner)
+        importlib.reload(config)
+        importlib.reload(db)
+        importlib.reload(runner)
 
-    db.init_db()
-    status = runner.get_migration_status()
-    assert status["up_to_date"] is True
-    assert status["current_version"] == status["target_version"]
-    conn = db.get_db()
-    assert db._column_exists(conn, "articles", "article_kind")
-    assert db._column_exists(conn, "external_agents", "webhook_url")
-    conn.close()
+        db.init_db()
+        status = runner.get_migration_status()
+        assert status["up_to_date"] is True
+        assert status["current_version"] == status["target_version"]
+        conn = db.get_db()
+        assert db._column_exists(conn, "articles", "article_kind")
+        assert db._column_exists(conn, "articles", "tool_spec_json")
+        assert db._column_exists(conn, "articles", "needs_review")
+        assert db._column_exists(conn, "articles", "category")
+        assert db._table_exists(conn, "pending_topics")
+        assert db._column_exists(conn, "external_agents", "webhook_url")
+        conn.close()
+    finally:
+        _restore_test_database()
 
 
 def test_legacy_database_bootstrap_without_rerunning_alters():
@@ -72,24 +93,26 @@ def test_legacy_database_bootstrap_without_rerunning_alters():
 
     os.environ["AIWIKI_DATABASE_URL"] = f"sqlite:///{db_path}"
 
-    import importlib
-    import core.config as config
-    import core.database as db
-    import migrations.runner as runner
+    try:
+        import core.config as config
+        import core.database as db
+        import migrations.runner as runner
 
-    importlib.reload(config)
-    importlib.reload(db)
-    importlib.reload(runner)
+        importlib.reload(config)
+        importlib.reload(db)
+        importlib.reload(runner)
 
-    db.init_db()
+        db.init_db()
 
-    status = runner.get_migration_status()
-    assert status["up_to_date"] is True
+        status = runner.get_migration_status()
+        assert status["up_to_date"] is True
 
-    conn = db.get_db()
-    agent = db._fetchone(conn, "SELECT overview_article_id FROM external_agents WHERE name = 'LegacyBot'")
-    conn.close()
-    assert agent["overview_article_id"] is not None
+        conn = db.get_db()
+        agent = db._fetchone(conn, "SELECT overview_article_id FROM external_agents WHERE name = 'LegacyBot'")
+        conn.close()
+        assert agent["overview_article_id"] is not None
+    finally:
+        _restore_test_database()
 
 
 def test_health_includes_migration_status(client):

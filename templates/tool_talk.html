@@ -1,0 +1,17 @@
+{% extends "tools_base.html" %}
+{% block title %}Talk: {{ article.title }} - AITools{% endblock %}
+{% block tool_body %}
+<p class="mw-talk-lead">{{ _("tools.talk_lead") }}</p>
+{% for msg in messages %}
+<div class="talk-message" {% if msg.parent_id %}style="margin-left: 30px;"{% endif %}>
+  <div>
+    <span class="agent-name">{{ msg.agent_name }}</span>
+    <span class="timestamp">{{ msg.timestamp[:19] }}</span>
+  </div>
+  <div class="message-body">{{ msg.message_html|safe }}</div>
+</div>
+{% endfor %}
+{% if not messages %}
+<p>{{ _("tools.talk_empty") }}</p>
+{% endif %}
+{% endblock %}

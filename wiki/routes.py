@@ -11,6 +11,13 @@ from wiki.helpers import enrich_article_html
 router = APIRouter(prefix="/wiki")
 
 
+def _require_wiki_article(slug: str) -> dict:
+    article = db.get_article(slug)
+    if not article or db.is_aitool(article):
+        raise HTTPException(status_code=404, detail="Article not found")
+    return article
+
+
 def _wiki_context(
     request: Request,
     article: dict,
@@ -39,9 +46,7 @@ def _wiki_context(
 
 @router.get("/{slug}", response_class=HTMLResponse)
 async def article_view(request: Request, slug: str):
-    article = db.get_article(slug)
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = _require_wiki_article(slug)
     content_html = security.render_markdown(article["content"])
     is_overview = db.is_agent_overview(article)
     activity = []
@@ -98,9 +103,7 @@ async def article_view(request: Request, slug: str):
 async def edit_view(request: Request, slug: str):
     if not config.WIKI_EDIT_ENABLED:
         raise HTTPException(status_code=403, detail="Wiki editing is disabled on this instance.")
-    article = db.get_article(slug)
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = _require_wiki_article(slug)
     if db.is_agent_overview(article):
         raise HTTPException(
             status_code=403,
@@ -123,9 +126,7 @@ async def edit_view(request: Request, slug: str):
 async def edit_submit(request: Request, slug: str, content: str = Form(...), summary: str = Form(...)):
     if not config.WIKI_EDIT_ENABLED:
         raise HTTPException(status_code=403, detail="Wiki editing is disabled on this instance.")
-    article = db.get_article(slug)
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = _require_wiki_article(slug)
     if db.is_agent_overview(article):
         raise HTTPException(
             status_code=403,
@@ -142,9 +143,7 @@ async def edit_submit(request: Request, slug: str, content: str = Form(...), sum
 
 @router.get("/{slug}/history", response_class=HTMLResponse)
 async def history_view(request: Request, slug: str):
-    article = db.get_article(slug)
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = _require_wiki_article(slug)
     revisions = db.get_revisions(article["id"])
     return render_template(
         request,
@@ -164,9 +163,7 @@ async def history_view(request: Request, slug: str):
 
 @router.get("/{slug}/talk", response_class=HTMLResponse)
 async def talk_view(request: Request, slug: str):
-    article = db.get_article(slug)
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = _require_wiki_article(slug)
     raw_messages = db.get_talk_messages(article["id"])
     messages = [
         {**msg, "message_html": security.render_talk_markdown(msg["message"])}
@@ -190,9 +187,7 @@ async def talk_view(request: Request, slug: str):
 
 @router.get("/{slug}/revision/{revision_id}", response_class=HTMLResponse)
 async def revision_view(request: Request, slug: str, revision_id: int):
-    article = db.get_article(slug)
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = _require_wiki_article(slug)
     revision = db.get_revision(revision_id)
     if not revision or revision["article_id"] != article["id"]:
         raise HTTPException(status_code=404, detail="Revision not found")
@@ -212,9 +207,7 @@ async def revision_view(request: Request, slug: str, revision_id: int):
 
 @router.get("/{slug}/diff", response_class=HTMLResponse)
 async def diff_view(request: Request, slug: str, oldid: int, newid: int):
-    article = db.get_article(slug)
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = _require_wiki_article(slug)
     old_revision = db.get_revision(oldid)
     new_revision = db.get_revision(newid)
     if not old_revision or not new_revision:

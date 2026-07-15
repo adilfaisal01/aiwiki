@@ -10,11 +10,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Resp
 from fastapi.staticfiles import StaticFiles
 
 import core.database as db
+from core import accounts
 from core import config
 from core.config import AGENT_CYCLE_INTERVAL
 from wiki.routes import router as wiki_router
 from external_api.routes import router as api_router
 from manage_agents.routes import router as manage_agents_router
+from accounts.routes import router as accounts_router
+from accounts.pages import router as account_pages_router
+from web.pricing import router as pricing_router
 from agents.coordinator import Coordinator
 from scripts.seed_data import seed_database
 import core.security as security
@@ -23,6 +27,7 @@ from core.rate_limit import registration_rate_limiter, rate_limit_backend
 from web.static_assets import static_version
 from web.theme_manager import get_theme_css
 from web.template_env import render_template
+from web import i18n
 from wiki.code_blocks import get_pygments_css
 from core.http_utils import client_ip
 from core.live_portal import home_portal_data
@@ -51,7 +56,10 @@ def agent_loop():
             _agent_loop_state["last_action"] = result.get("action")
             _agent_loop_state["last_error"] = None
             action = result.get("action")
-            if action == "batch":
+            if action == "multi":
+                steps = result.get("steps") or []
+                logger.info("[Agent] %s cycle complete: %d step(s)", coordinator.name, len(steps))
+            elif action == "batch":
                 count = result.get("count", 0)
                 logger.info("[Agent] %s batch complete: %d actions", coordinator.name, count)
             elif action == "created":
@@ -99,6 +107,22 @@ app = FastAPI(title="AIWiki", version=config.APP_VERSION, lifespan=lifespan)
 
 
 @app.middleware("http")
+async def account_user_middleware(request: Request, call_next):
+    if request.url.path.startswith(("/static", "/health", "/theme.css", "/codehilite.css")):
+        request.state.account_user = None
+    else:
+        request.state.account_user = accounts.user_from_request(request)
+    request.state.locale = i18n.resolve_locale(request, request.state.account_user)
+    path = request.url.path
+    scope = request.query_params.get("scope", "")
+    on_tools = config.AITOOLS_ENABLED and (
+        path.startswith("/tools") or (path == "/search" and scope == "tools")
+    )
+    request.state.site_section = "tools" if on_tools else "wiki"
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     request.state.csp_nonce = secrets.token_urlsafe(16)
     request.state.static_version = static_version()
@@ -129,7 +153,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def db_init_middleware(request: Request, call_next):
-    if not request.url.path.startswith(("/static", "/health", "/db-status", "/theme.css", "/codehilite.css")):
+    if not request.url.path.startswith(("/static", "/health", "/theme.css", "/codehilite.css")):
         _ensure_db()
     return await call_next(request)
 
@@ -178,7 +202,16 @@ async def codehilite_stylesheet():
 
 app.include_router(wiki_router)
 app.include_router(api_router)
+if config.AITOOLS_ENABLED:
+    from aitools.routes import router as aitools_router
+    from aitools.api import router as aitools_api_router
+
+    app.include_router(aitools_router)
+    app.include_router(aitools_api_router)
 app.include_router(manage_agents_router)
+app.include_router(accounts_router)
+app.include_router(account_pages_router)
+app.include_router(pricing_router)
 
 
 @app.get("/health")
@@ -208,15 +241,6 @@ async def health():
     except Exception as e:
         logger.error("Health check failed: %s", e)
         return JSONResponse({"status": "degraded", "database": "error"}, status_code=503)
-
-
-@app.get("/db-status")
-async def db_status():
-    try:
-        articles = db.get_all_articles()
-        return JSONResponse({"status": "ok", "articles": len(articles)})
-    except Exception as e:
-        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
 @app.get("/admin/backup")
@@ -348,10 +372,17 @@ async def index(request: Request):
 
 
 @app.get("/search", response_class=HTMLResponse)
-async def search_page(request: Request, q: str = Query("", max_length=200)):
+async def search_page(request: Request, q: str = Query("", max_length=200), scope: str = Query("wiki")):
     query = q.strip()
+    if scope == "tools" and config.AITOOLS_ENABLED:
+        results = db.search_aitools(query, 30) if query else []
+        return render_template(
+            request,
+            "tools_search.html",
+            {"query": query, "results": results},
+        )
     results = db.search_articles(query, 30) if query else []
-    return render_template(request, "search.html", {"query": query, "results": results})
+    return render_template(request, "search.html", {"query": query, "results": results, "scope": "wiki"})
 
 
 @app.get("/recent-changes", response_class=HTMLResponse)
@@ -366,7 +397,7 @@ async def recent_changes(request: Request):
 
 @app.get("/random")
 async def random_article():
-    articles = [a for a in db.get_all_articles() if a.get("article_kind", "encyclopedia") != "agent_overview"]
+    articles = [a for a in db.get_all_articles() if a.get("article_kind", "encyclopedia") not in ("agent_overview", "aitool")]
     if not articles:
         return RedirectResponse(url="/")
     article = random.choice(articles)
@@ -400,7 +431,10 @@ async def register_agent_submit(request: Request):
         name = security.validate_agent_name(name)
     except security.ValidationError as e:
         return render_template(request, "register_agent.html", {"error": str(e)})
-    result = agent_ops.register_external_agent(name)
+    result = agent_ops.register_external_agent(
+        name,
+        user_id=(accounts.user_from_request(request) or {}).get("id"),
+    )
     if not result:
         return render_template(request, "register_agent.html", {"error": "Agent name already registered"})
     return render_template(

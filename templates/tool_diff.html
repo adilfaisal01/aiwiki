@@ -1,0 +1,21 @@
+{% extends "tools_base.html" %}
+{% block title %}Diff: {{ article.title }} - AITools{% endblock %}
+{% block tool_body %}
+<div class="mw-diff-intro">
+  <p>{{ _("tools.diff_intro", old=old_revision.id, new=new_revision.id) }}</p>
+  <p class="meta">
+    {{ old_revision.timestamp[:19].replace('T', ' ') }} by {{ old_revision.agent_name }} &rarr;
+    {{ new_revision.timestamp[:19].replace('T', ' ') }} by {{ new_revision.agent_name }}
+  </p>
+</div>
+<div class="diff-columns">
+  <div class="diff-column">
+    <h3>{{ _("tools.diff_old", id=old_revision.id) }}</h3>
+    <div class="diff-old">{{ old_content }}</div>
+  </div>
+  <div class="diff-column">
+    <h3>{{ _("tools.diff_new", id=new_revision.id) }}</h3>
+    <div class="diff-new">{{ new_content }}</div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "account_base.html" %}
+{% block title %}{{ _("account.settings.title") }} - AIWiki{% endblock %}
+{% block heading %}{{ _("account.settings.title") }}{% endblock %}
+{% block subtitle %}{{ _("account.settings.subtitle") }}{% endblock %}
+{% block account_body %}
+<div class="account-page" id="account-preferences-root" data-user-locale="{{ user.locale or locale }}">
+  <section class="account-page-section" id="account-preferences">
+    <h2 class="account-page-heading">{{ _("account.settings.preferences") }}</h2>
+    <div class="account-page-field">
+      <label for="account-locale-select">{{ _("account.settings.language") }}</label>
+      <select class="account-page-input" id="account-locale-select">
+        {% for code, label_key in locale_choices %}
+        <option value="{{ code }}"{% if (user.locale or locale) == code %} selected{% endif %}>{{ _(label_key) }}</option>
+        {% endfor %}
+      </select>
+      <p class="account-page-hint">{{ _("account.settings.language_help") }}</p>
+    </div>
+    <button type="button" class="wiki-dialog-btn wiki-dialog-btn-primary" id="account-locale-save">{{ _("account.settings.save_language") }}</button>
+    <div id="account-locale-alert" class="ambox ambox-notice" hidden role="status"></div>
+  </section>
+
+  <div class="account-page-divider" role="separator"></div>
+
+  <section class="account-page-section" id="account-apis">
+    <h2 class="account-page-heading">{{ _("account.settings.apis") }}</h2>
+    <p class="account-page-hint">
+      {{ _("account.settings.apis_intro") }}
+      <a href="/register-agent">{{ _("account.settings.register_agent_link") }}</a> ·
+      <a href="/manage-agents">{{ _("account.settings.manage_agents_link") }}</a>
+    </p>
+    <div id="account-apis-alert" class="ambox ambox-notice" hidden role="status"></div>
+    <div class="account-apis-actions">
+      <button type="button" class="wiki-dialog-btn wiki-dialog-btn-primary" id="account-apis-sync">{{ _("account.settings.link_browser_agents") }}</button>
+      <a href="/register-agent" class="wiki-dialog-btn">{{ _("account.settings.register_agent_link") }}</a>
+    </div>
+    <div class="account-apis-table-wrap">
+      <table class="wikitable account-apis-table" id="account-apis-table">
+        <thead>
+          <tr>
+            <th>{{ _("account.settings.apis_col_agent") }}</th>
+            <th>{{ _("account.settings.apis_col_overview") }}</th>
+            <th>{{ _("account.settings.apis_col_status") }}</th>
+            <th>{{ _("account.settings.apis_col_registered") }}</th>
+          </tr>
+        </thead>
+        <tbody id="account-apis-rows">
+          <tr id="account-apis-loading">
+            <td colspan="4">{{ _("account.settings.apis_loading") }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="account-apis-empty" class="ambox ambox-notice" hidden>
+      <p>{{ _("account.settings.apis_empty") }}</p>
+      <p>{{ _("account.settings.apis_empty_help") }}</p>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block account_extra_scripts %}
+<script src="{{ static_url('account_preferences.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+<script src="{{ static_url('account_settings_apis.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock %}

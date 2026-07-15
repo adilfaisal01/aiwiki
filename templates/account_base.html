@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import account_page_toolbar, account_quick_nav %}
+
+{% block body_class %} class="page-account"{% endblock %}
+{% block page_content_class %} class="page-account-content"{% endblock %}
+{% block site_sub %}{% endblock %}
+{% block tabs %}{% endblock %}
+
+{% block content %}
+<div class="mw-article account-layout" id="mw-top">
+  {{ account_page_toolbar(active_page) }}
+  <div class="mw-content-wrapper">
+    {{ account_quick_nav(nav_sections) }}
+    <div class="mw-body-content mw-content-ltr">
+      {% block account_body %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ static_url('wiki_toc.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+{% block account_extra_scripts %}{% endblock %}
+{% endblock %}
