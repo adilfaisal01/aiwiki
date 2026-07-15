@@ -56,12 +56,17 @@ class Coordinator(BaseAgent):
         batch_size = 3
         new_articles = []
         existing_slugs = {a["slug"] for a in db.get_all_articles()}
+        writer_order = [self.historian, self.scientist, random.choice([self.historian, self.scientist])]
 
-        for _ in range(batch_size):
-            topic, category = pick_topic(exclude_slugs=existing_slugs)
+        for writer in writer_order:
+            target_cat = "history" if writer == self.historian else "science"
+            topic, category = pick_topic(category=target_cat, exclude_slugs=existing_slugs)
             slug = db.slugify(topic)
             if slug in existing_slugs:
-                continue
+                topic, category = pick_topic(exclude_slugs=existing_slugs)
+                slug = db.slugify(topic)
+                if slug in existing_slugs:
+                    continue
             result = self._create_new(topic, category)
             if result:
                 results.append(result)
