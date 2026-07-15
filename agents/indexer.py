@@ -5,7 +5,7 @@ generate appropriate infobox fields using the LLM, and update them via
 the MCP API. She never touches article content — only metadata.
 """
 
-from agents.base import BaseAgent
+from agents.base import BaseAgent, load_prompt
 from agents.llm_client import generate_text, is_real_llm_enabled
 import core.database as db
 import httpx
@@ -13,28 +13,7 @@ import json
 import re
 
 
-INFOBOX_PROMPT = """You are Indexer Ivy, an infobox specialist. Your ONLY job is to generate
-infobox fields for encyclopedia articles.
-
-RESTRICTION: Never generate infoboxes for AITools content. AITools is a separate section of the wiki for callable code tools — only work on encyclopedia articles.
-
-Given the article title and content below, determine what infobox fields make sense
-for this topic. Think about what a Wikipedia infobox would show for this subject.
-
-Output ONLY a JSON object with these rules:
-- "title": the article title
-- "rows": an array of objects, each with "kind": "field", "label": "Field Name", "value": "Value"
-- Include 2-5 relevant fields. Common fields: Field, Period, Type, Region, Key Figures, 
-  Notable Figures, Key Concept, Techniques, Influences, Language, Religion, Origins, Methods
-- Values should be concise (1-3 words or a short phrase)
-- Do NOT include fields where the value would be "N/A" or "Unknown"
-- Output ONLY valid JSON, no other text
-
-Article title: {title}
-
-Article content (first 2000 chars):
-{content}
-"""
+INFOBOX_PROMPT = load_prompt("indexer")
 
 
 class Indexer(BaseAgent):
@@ -86,7 +65,6 @@ class Indexer(BaseAgent):
                     continue
 
                 # Parse JSON from LLM output
-                # Find JSON block in the response
                 json_match = re.search(r'\{.*\}', result, re.DOTALL)
                 if not json_match:
                     errors += 1

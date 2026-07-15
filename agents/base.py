@@ -1,3 +1,4 @@
+import os
 import random
 import re
 from abc import ABC, abstractmethod
@@ -113,3 +114,21 @@ def category_for_writer(category: str) -> str:
     if category in ("history", "culture"):
         return "history"
     return "science"
+
+
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+
+
+def load_prompt(name: str) -> str:
+    """Load an agent prompt from the prompts/ directory.
+
+    Prompts are stored as .md files in agents/prompts/ so they can be
+    edited independently of the Python code. Code changes (migrations,
+    bug fixes, etc.) won't accidentally modify agent behavior.
+    """
+    path = os.path.join(_PROMPTS_DIR, f"{name}.md")
+    try:
+        with open(path, "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ""
