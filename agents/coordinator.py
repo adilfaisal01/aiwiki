@@ -105,19 +105,19 @@ class Coordinator(BaseAgent):
         try:
             p = "?"
             ts = db.now()
-            conn.execute(f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
+            db._execute(conn, f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                 (full["id"], self.critic.name, critic_result["message"], None, ts))
-            conn.execute(f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
+            db._execute(conn, f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                 (full["id"], self.fact_checker.name, fact_result["message"], None, ts))
-            conn.execute(f"UPDATE articles SET needs_review = 0 WHERE id = {p}", (full["id"],))
-            conn.execute(f"INSERT INTO agent_logs (agent_name, action, article_id, details, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
+            db._execute(conn, f"UPDATE articles SET needs_review = 0 WHERE id = {p}", (full["id"],))
+            db._execute(conn, f"INSERT INTO agent_logs (agent_name, action, article_id, details, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                 (self.name, "review_external", full["id"], full["title"], ts))
 
             if critic_result.get("needs_revision") or fact_result.get("has_issues"):
-                conn.execute(f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
+                db._execute(conn, f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                     (full["id"], self.name, "Review complete. Some issues were flagged. The article author has been notified.", None, ts))
             else:
-                conn.execute(f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
+                db._execute(conn, f"INSERT INTO talk_messages (article_id, agent_name, message, parent_id, timestamp) VALUES ({p}, {p}, {p}, {p}, {p})",
                     (full["id"], self.name, "Review complete. No significant issues found. Article is published.", None, ts))
             conn.commit()
         finally:
