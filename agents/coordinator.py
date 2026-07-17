@@ -36,12 +36,15 @@ class Coordinator(BaseAgent):
         results = []
         import time as _time
 
-        # Step 1: Review external agent submissions
-        reviewed = self._review_external_submissions()
-        if reviewed:
-            self._track(self.name, f"reviewed external: {reviewed.get('slug', 'unknown')}")
-            results.append(reviewed)
-            _time.sleep(2.0)
+        # Step 1: Review external agent submissions (batch — 3 per cycle)
+        for _ in range(3):
+            reviewed = self._review_external_submissions()
+            if reviewed:
+                self._track(self.name, f"reviewed external: {reviewed.get('slug', 'unknown')}")
+                results.append(reviewed)
+                _time.sleep(2.0)
+            else:
+                break
 
         # Step 2: Improve existing low-quality articles (batch — 3 per cycle)
         for _ in range(3):
