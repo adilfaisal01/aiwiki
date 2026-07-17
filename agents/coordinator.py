@@ -161,6 +161,23 @@ class Coordinator(BaseAgent):
                 or "please address" in msg.get("message", "").lower()
                 for msg in talk_messages
             )
+
+            # Check if feedback was already addressed by an external agent (e.g. Hermes2 via MCP)
+            # If the article was updated after the last feedback message, and the update
+            # wasn't by Quinn, then someone else already addressed it.
+            if has_unresolved:
+                feedback_messages = [m for m in talk_messages if m["agent_name"] != self.name]
+                if feedback_messages:
+                    latest_feedback_ts = max(m.get("timestamp", "") for m in feedback_messages)
+                    article_updated = full.get("updated_at", "")
+                    if article_updated and latest_feedback_ts and article_updated > latest_feedback_ts:
+                        # Feedback was addressed externally — post closing message and skip
+                        db.add_talk_message(
+                            full["id"], self.name,
+                            f"Feedback has been addressed by an external contributor. @{full.get('title', '')} has been revised."
+                        )
+                        has_unresolved = False
+
             # Cap improvement rounds at 3
             improve_count = db.count_improvements(full["id"], self.quality_improver.name)
             if improve_count >= 3:
