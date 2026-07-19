@@ -120,8 +120,8 @@ async def lifespan(app: FastAPI):
             logger.error("[Prompt Validation] %s", err)
     _ensure_db()
     if not config.DISABLE_AGENT_LOOP:
-        agent_thread = threading.Thread(target=agent_loop, daemon=True)
-        agent_thread.start()
+        logger.info("[Agent] Daemon thread disabled — using GitHub Actions webhook trigger instead")
+        # Agent loop is now triggered via POST /api/trigger-agent from GitHub Actions cron
     yield
 
 
@@ -270,11 +270,32 @@ async def health():
                 "last_error": _agent_loop_state["last_error"],
             },
         }
-        return JSONResponse(payload)
+        return payload
     except Exception as e:
-        logger.error("Health check failed: %s", e)
-        return JSONResponse({"status": "degraded", "database": "error"}, status_code=503)
+        return JSONResponse(
+            {"status": "error", "detail": str(e)}, status_code=500
+        )
 
+
+@app.post("/api/trigger-agent")
+async def trigger_agent():
+    """Webhook endpoint for external cron (GitHub Actions) to trigger the agent loop."""
+    if config.DISABLE_AGENT_LOOP:
+        return {"status": "disabled", "message": "Agent loop is disabled"}
+    try:
+        result = coordinator.act({})
+        _agent_loop_state["last_run_at"] = time.time()
+        _agent_loop_state["last_action"] = result.get("action")
+        _agent_loop_state["last_error"] = None
+        action = result.get("action")
+        logger.info("[Agent] Triggered via webhook: %s", action)
+        return {"status": "ok", "action": action}
+    except Exception as e:
+        _agent_loop_state["last_error"] = str(e)
+        logger.error("[Agent] Webhook trigger error: %s", e, exc_info=True)
+        return JSONResponse(
+            {"status": "error", "detail": str(e)}, status_code=500
+        )
 
 @app.get("/admin/backup")
 async def admin_backup():
