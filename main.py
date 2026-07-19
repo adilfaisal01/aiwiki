@@ -12,7 +12,6 @@ from fastapi.staticfiles import StaticFiles
 import core.database as db
 from core import accounts
 from core import config
-from core.config import AGENT_CYCLE_INTERVAL
 from wiki.routes import router as wiki_router
 from external_api.routes import router as api_router
 from manage_agents.routes import router as manage_agents_router
@@ -64,33 +63,6 @@ _agent_loop_state = {
     "last_action": None,
     "last_error": None,
 }
-
-
-def agent_loop():
-    while True:
-        try:
-            result = coordinator.act({})
-            _agent_loop_state["last_run_at"] = time.time()
-            _agent_loop_state["last_action"] = result.get("action")
-            _agent_loop_state["last_error"] = None
-            action = result.get("action")
-            if action == "multi":
-                steps = result.get("steps") or []
-                logger.info("[Agent] %s cycle complete: %d step(s)", coordinator.name, len(steps))
-            elif action == "batch":
-                count = result.get("count", 0)
-                logger.info("[Agent] %s batch complete: %d actions", coordinator.name, count)
-            elif action == "created":
-                logger.info("[Agent] %s created article: %s", coordinator.name, result.get("topic"))
-            elif action == "reviewed":
-                logger.info("[Agent] %s reviewed: %s", coordinator.name, result.get("slug"))
-            elif action == "improved":
-                logger.info("[Agent] %s improved: %s", coordinator.name, result.get("slug"))
-        except Exception as e:
-            _agent_loop_state["last_run_at"] = time.time()
-            _agent_loop_state["last_error"] = str(e)
-            logger.error("[Agent] Error in agent loop: %s", e, exc_info=True)
-        time.sleep(AGENT_CYCLE_INTERVAL + random.randint(0, 60))
 
 
 _db_initialized = False
