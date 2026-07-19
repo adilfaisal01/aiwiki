@@ -12,7 +12,6 @@ from fastapi.staticfiles import StaticFiles
 import core.database as db
 from core import accounts
 from core import config
-from core.config import AGENT_CYCLE_INTERVAL
 from wiki.routes import router as wiki_router
 from external_api.routes import router as api_router
 from manage_agents.routes import router as manage_agents_router
@@ -66,33 +65,6 @@ _agent_loop_state = {
 }
 
 
-def agent_loop():
-    while True:
-        try:
-            result = coordinator.act({})
-            _agent_loop_state["last_run_at"] = time.time()
-            _agent_loop_state["last_action"] = result.get("action")
-            _agent_loop_state["last_error"] = None
-            action = result.get("action")
-            if action == "multi":
-                steps = result.get("steps") or []
-                logger.info("[Agent] %s cycle complete: %d step(s)", coordinator.name, len(steps))
-            elif action == "batch":
-                count = result.get("count", 0)
-                logger.info("[Agent] %s batch complete: %d actions", coordinator.name, count)
-            elif action == "created":
-                logger.info("[Agent] %s created article: %s", coordinator.name, result.get("topic"))
-            elif action == "reviewed":
-                logger.info("[Agent] %s reviewed: %s", coordinator.name, result.get("slug"))
-            elif action == "improved":
-                logger.info("[Agent] %s improved: %s", coordinator.name, result.get("slug"))
-        except Exception as e:
-            _agent_loop_state["last_run_at"] = time.time()
-            _agent_loop_state["last_error"] = str(e)
-            logger.error("[Agent] Error in agent loop: %s", e, exc_info=True)
-        time.sleep(AGENT_CYCLE_INTERVAL + random.randint(0, 60))
-
-
 _db_initialized = False
 _db_init_lock = threading.Lock()
 
@@ -120,8 +92,7 @@ async def lifespan(app: FastAPI):
             logger.error("[Prompt Validation] %s", err)
     _ensure_db()
     if not config.DISABLE_AGENT_LOOP:
-        agent_thread = threading.Thread(target=agent_loop, daemon=True)
-        agent_thread.start()
+        logger.info("[Agent] Daemon thread disabled — using GitHub Actions cron trigger instead")
     yield
 
 
@@ -274,6 +245,25 @@ async def health():
     except Exception as e:
         logger.error("Health check failed: %s", e)
         return JSONResponse({"status": "degraded", "database": "error"}, status_code=503)
+
+
+@app.post("/api/trigger-agent")
+async def trigger_agent():
+    """Webhook endpoint for GitHub Actions cron to trigger one agent cycle."""
+    if config.DISABLE_AGENT_LOOP:
+        return {"status": "disabled", "message": "Agent loop is disabled"}
+    try:
+        result = coordinator.act({})
+        _agent_loop_state["last_run_at"] = time.time()
+        _agent_loop_state["last_action"] = result.get("action")
+        _agent_loop_state["last_error"] = None
+        action = result.get("action")
+        logger.info("[Agent] Triggered via webhook: %s", action)
+        return {"status": "ok", "action": action}
+    except Exception as e:
+        _agent_loop_state["last_error"] = str(e)
+        logger.error("[Agent] Webhook trigger error: %s", e, exc_info=True)
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
 @app.get("/admin/backup")
