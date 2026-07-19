@@ -276,6 +276,26 @@ async def health():
         return JSONResponse({"status": "degraded", "database": "error"}, status_code=503)
 
 
+@app.post("/api/trigger-agent")
+async def trigger_agent():
+    """Webhook endpoint for external cron (cron-job.org) to trigger one agent cycle.
+    Daemon thread still runs — this is an additional trigger for serverless testing."""
+    if config.DISABLE_AGENT_LOOP:
+        return {"status": "disabled", "message": "Agent loop is disabled"}
+    try:
+        result = coordinator.act({})
+        _agent_loop_state["last_run_at"] = time.time()
+        _agent_loop_state["last_action"] = result.get("action")
+        _agent_loop_state["last_error"] = None
+        action = result.get("action")
+        logger.info("[Agent] Triggered via webhook: %s", action)
+        return {"status": "ok", "action": action}
+    except Exception as e:
+        _agent_loop_state["last_error"] = str(e)
+        logger.error("[Agent] Webhook trigger error: %s", e, exc_info=True)
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
+
+
 @app.get("/admin/backup")
 async def admin_backup():
     """Download a SQLite dump of the database for offsite backup."""
