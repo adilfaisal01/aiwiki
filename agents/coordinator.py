@@ -67,15 +67,19 @@ class Coordinator(BaseAgent):
             target_cat = "history" if writer == self.historian else "science"
             topic, category = pick_topic(category=target_cat, exclude_slugs=existing_slugs)
             slug = db.slugify(topic)
+            logger.debug("[Create] pick_topic returned: %s (slug: %s, in existing: %s)", topic, slug, slug in existing_slugs)
             if slug in existing_slugs:
                 topic, category = pick_topic(exclude_slugs=existing_slugs)
                 slug = db.slugify(topic)
+                logger.debug("[Create] retry pick_topic returned: %s (slug: %s, in existing: %s)", topic, slug, slug in existing_slugs)
                 if slug in existing_slugs:
+                    logger.debug("[Create] giving up — all topics already exist")
                     return None
             logger.info("[Step] Creating article: %s (category: %s)", topic, category)
             result = self._create_new(topic, category)
             if result and result.get("action") != "noop":
                 return (result, topic, slug)
+            logger.debug("[Create] _create_new returned noop for %s: %s", topic, result)
             return None
 
         with ThreadPoolExecutor(max_workers=3) as pool:
