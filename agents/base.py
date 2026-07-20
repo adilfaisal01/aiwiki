@@ -157,7 +157,12 @@ def pick_topic(category: str | None = None, exclude_slugs: set[str] | None = Non
 
 
 def _slug_for_topic(topic: str) -> str:
-    return topic.lower().replace(" ", "_").replace("'", "").replace("(", "").replace(")", "")
+    s = topic.lower().strip()
+    s = "".join(c if c.isalnum() or c in " -_" else "" for c in s)
+    s = s.replace(" ", "_").replace("-", "_")
+    while "__" in s:
+        s = s.replace("__", "_")
+    return s.strip("_")
 
 
 def category_for_writer(category: str) -> str:

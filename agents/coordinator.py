@@ -164,7 +164,7 @@ class Coordinator(BaseAgent):
             if updated:
                 try:
                     updated_dt = datetime.fromisoformat(updated)
-                    if (datetime.now(timezone.utc) - updated_dt).total_seconds() < 600:
+                    if (datetime.now(timezone.utc) - updated_dt).total_seconds() < 60:
                         continue
                 except (ValueError, TypeError):
                     pass
