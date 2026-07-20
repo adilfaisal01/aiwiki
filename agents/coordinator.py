@@ -34,39 +34,36 @@ class Coordinator(BaseAgent):
 
     def act(self, context: dict) -> dict:
         results = []
-        import time as _time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        # Step 1: Review external agent submissions (batch — 3 per cycle)
-        for _ in range(3):
-            reviewed = self._review_external_submissions()
-            if reviewed:
-                slug = reviewed.get('slug', 'unknown')
-                logger.info("[Step] Reviewed external submission: %s", slug)
-                self._track(self.name, f"reviewed external: {slug}")
-                results.append(reviewed)
-                _time.sleep(2.0)
-            else:
-                break
+        # Step 1: Review external agent submissions (parallel — up to 3)
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            review_futures = [pool.submit(self._review_external_submissions) for _ in range(3)]
+            for future in as_completed(review_futures):
+                reviewed = future.result()
+                if reviewed and reviewed.get("action") != "noop":
+                    slug = reviewed.get('slug', 'unknown')
+                    logger.info("[Step] Reviewed external submission: %s", slug)
+                    self._track(self.name, f"reviewed external: {slug}")
+                    results.append(reviewed)
 
-        # Step 2: Improve existing low-quality articles (batch — 3 per cycle)
-        for _ in range(3):
-            improved = self._improve_low_quality()
-            if improved:
-                slug = improved.get('slug', 'unknown')
-                logger.info("[Step] Improved article: %s", slug)
-                self._track(self.name, f"improved article: {slug}")
-                results.append(improved)
-                _time.sleep(2.0)
-            else:
-                break
+        # Step 2: Improve existing low-quality articles (parallel — up to 3)
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            improve_futures = [pool.submit(self._improve_low_quality) for _ in range(3)]
+            for future in as_completed(improve_futures):
+                improved = future.result()
+                if improved and improved.get("action") != "noop":
+                    slug = improved.get('slug', 'unknown')
+                    logger.info("[Step] Improved article: %s", slug)
+                    self._track(self.name, f"improved article: {slug}")
+                    results.append(improved)
 
-        # Step 3: Create new articles (batch — 3 per cycle)
-        batch_size = 3
+        # Step 3: Create new articles (parallel — up to 3)
         new_articles = []
         existing_slugs = {a["slug"] for a in db.get_all_articles()}
         writer_order = [self.historian, self.scientist, random.choice([self.historian, self.scientist])]
 
-        for writer in writer_order:
+        def _try_create(writer):
             target_cat = "history" if writer == self.historian else "science"
             topic, category = pick_topic(category=target_cat, exclude_slugs=existing_slugs)
             slug = db.slugify(topic)
@@ -74,14 +71,23 @@ class Coordinator(BaseAgent):
                 topic, category = pick_topic(exclude_slugs=existing_slugs)
                 slug = db.slugify(topic)
                 if slug in existing_slugs:
-                    continue
+                    return None
             logger.info("[Step] Creating article: %s (category: %s)", topic, category)
             result = self._create_new(topic, category)
-            if result:
-                results.append(result)
-                new_articles.append(result)
-                existing_slugs.add(slug)
-                logger.info("[Step] Created article: %s (slug: %s)", topic, result.get('slug', ''))
+            if result and result.get("action") != "noop":
+                return (result, topic, slug)
+            return None
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            create_futures = [pool.submit(_try_create, w) for w in writer_order]
+            for future in as_completed(create_futures):
+                outcome = future.result()
+                if outcome:
+                    result, topic, slug = outcome
+                    results.append(result)
+                    new_articles.append(result)
+                    existing_slugs.add(slug)
+                    logger.info("[Step] Created article: %s (slug: %s)", topic, result.get('slug', ''))
 
         if results:
             return {"action": "multi", "steps": results, "batch_size": len(new_articles)}
