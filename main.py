@@ -51,6 +51,7 @@ def _ensure_db():
         logger.info("Initializing database...")
         db.init_db()
         seed_database()
+        db.seed_topics_from_json()
         _db_initialized = True
         logger.info("Database initialized and seeded successfully")
 

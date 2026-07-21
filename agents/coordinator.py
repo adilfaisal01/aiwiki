@@ -57,22 +57,16 @@ class Coordinator(BaseAgent):
 
         # Step 3: Create new articles (parallel — up to 3)
         new_articles = []
-        existing_slugs = {a["slug"] for a in db.get_all_articles()}
         writer_order = [self.historian, self.scientist, random.choice([self.historian, self.scientist])]
 
         def _try_create(writer):
             target_cat = "history" if writer == self.historian else "science"
-            topic, category = pick_topic(category=target_cat, exclude_slugs=existing_slugs)
+            topic, category = pick_topic(category=target_cat)
+            if not topic:
+                logger.info("[Create] no topics available in %s", target_cat)
+                return None
             slug = db.slugify(topic)
-            logger.info("[Create] pick_topic returned: %s (slug: %s, in existing: %s)", topic, slug, slug in existing_slugs)
-            if slug in existing_slugs:
-                topic, category = pick_topic(exclude_slugs=existing_slugs)
-                slug = db.slugify(topic)
-                logger.info("[Create] retry pick_topic returned: %s (slug: %s, in existing: %s)", topic, slug, slug in existing_slugs)
-                if slug in existing_slugs:
-                    logger.info("[Create] giving up — all topics already exist")
-                    return None
-            logger.info("[Step] Creating article: %s (category: %s)", topic, category)
+            logger.info("[Step] Creating article: %s (slug: %s, category: %s)", topic, slug, category)
             result = self._create_new(topic, category)
             if result and result.get("action") != "noop":
                 return (result, topic, slug)
@@ -87,7 +81,6 @@ class Coordinator(BaseAgent):
                     result, topic, slug = outcome
                     results.append(result)
                     new_articles.append(result)
-                    existing_slugs.add(slug)
                     logger.info("[Step] Created article: %s (slug: %s)", topic, result.get('slug', ''))
 
         if results:
@@ -296,6 +289,7 @@ class Coordinator(BaseAgent):
         if not article:
             return {"action": "noop", "reason": f"Article '{topic}' already exists"}
 
+        db.mark_topic_written(topic, category)
         db.log_agent_action(writer.name, "create_article", article["id"], topic)
         db.add_talk_message(article["id"], writer.name, f"I've drafted an initial article on **{topic}**. Please review.")
 

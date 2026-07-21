@@ -32,6 +32,7 @@ def main():
 
     logger.info("Initializing database...")
     db.init_db()
+    db.seed_topics_from_json()
 
     historian = Historian()
     scientist = Scientist()

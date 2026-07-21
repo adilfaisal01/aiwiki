@@ -221,6 +221,28 @@ def _migration_019_fix_wikipedia_links(conn) -> None:
                 db._execute(conn, f"UPDATE {table} SET {col} = {p} WHERE id = {p}", (new_content, row["id"]))
 
 
+def _migration_020_topics_table(conn) -> None:
+    """Create topics table for DB-backed topic management."""
+    if db._table_exists(conn, "topics"):
+        return
+    sid = db._serial_id()
+    bool_t = db._bool_type()
+    default_val = "FALSE" if config.is_postgres() else "0"
+    db._execute(
+        conn,
+        f"""CREATE TABLE topics (
+            id {sid},
+            title TEXT NOT NULL,
+            slug TEXT NOT NULL,
+            category TEXT NOT NULL,
+            is_written {bool_t} NOT NULL DEFAULT {default_val},
+            created_at TEXT NOT NULL
+        )""",
+    )
+    db._execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_topics_slug_category ON topics(slug, category)")
+    db._execute(conn, "CREATE INDEX IF NOT EXISTS idx_topics_unwritten ON topics(category, is_written)")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "initial_baseline", _migration_001_initial),
     Migration(2, "article_ownership_columns", _migration_002_article_ownership),
@@ -241,6 +263,7 @@ MIGRATIONS: list[Migration] = [
     Migration(17, "pending_topics", _migration_017_pending_topics),
     Migration(18, "fix_hardcoded_urls", _migration_018_fix_hardcoded_urls),
     Migration(19, "fix_wikipedia_links", _migration_019_fix_wikipedia_links),
+    Migration(20, "topics_table", _migration_020_topics_table),
 ]
 
 CURRENT_VERSION = MIGRATIONS[-1].version

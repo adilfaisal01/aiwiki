@@ -1122,6 +1122,121 @@ def parse_see_also(content: str) -> list[str]:
     return topics
 
 
+def seed_topics_from_json():
+    """One-time seed: load topics.json into the topics table if empty."""
+    conn = get_db()
+    try:
+        row = _fetchone(conn, "SELECT COUNT(*) AS cnt FROM topics")
+        if row and row["cnt"] > 0:
+            conn.close()
+            return
+    except Exception:
+        pass
+    import json, os
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "topics.json")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        conn.close()
+        return
+    if not isinstance(data, dict):
+        conn.close()
+        return
+    p = _param_style()
+    ts = now()
+    is_written_val = "FALSE" if config.is_postgres() else "0"
+    for category, topics in data.items():
+        if not isinstance(topics, list):
+            continue
+        for title in topics:
+            slug = slugify(title)
+            try:
+                if config.is_postgres():
+                    _execute(conn, f"INSERT INTO topics (title, slug, category, is_written, created_at) VALUES ({p}, {p}, {p}, {is_written_val}, {p}) ON CONFLICT (slug, category) DO NOTHING",
+                             (title, slug, category, ts))
+                else:
+                    _execute(conn, f"INSERT OR IGNORE INTO topics (title, slug, category, is_written, created_at) VALUES ({p}, {p}, {p}, {is_written_val}, {p})",
+                             (title, slug, category, ts))
+            except Exception:
+                pass
+    # Backfill existing articles as written
+    written_val = "TRUE" if config.is_postgres() else "1"
+    articles = _fetchall(conn, "SELECT title, slug, category FROM articles WHERE article_kind != 'agent_overview' AND article_kind != 'aitool'")
+    for a in articles:
+        cat = a.get("category") or "science"
+        slug = a["slug"]
+        _execute(conn, f"UPDATE topics SET is_written = {written_val} WHERE slug = {p} AND category = {p}",
+                 (slug, cat))
+    conn.commit()
+    conn.close()
+
+
+def pick_topic(category: str | None = None, exclude_slugs: set[str] | None = None) -> tuple[str, str]:
+    """Pick a random unwritten topic, optionally filtered by category and excluding slugs."""
+    conn = get_db()
+    p = _param_style()
+    is_written_false = "FALSE" if config.is_postgres() else "0"
+    if category:
+        if exclude_slugs:
+            row = _fetchone(conn, f"SELECT title, category FROM topics WHERE is_written = {is_written_false} AND category = {p} AND slug NOT IN ({','.join(p for _ in exclude_slugs)}) ORDER BY RANDOM() LIMIT 1",
+                           (category, *exclude_slugs))
+        else:
+            row = _fetchone(conn, f"SELECT title, category FROM topics WHERE is_written = {is_written_false} AND category = {p} ORDER BY RANDOM() LIMIT 1",
+                           (category,))
+    else:
+        if exclude_slugs:
+            row = _fetchone(conn, f"SELECT title, category FROM topics WHERE is_written = {is_written_false} AND slug NOT IN ({','.join(p for _ in exclude_slugs)}) ORDER BY RANDOM() LIMIT 1",
+                           tuple(exclude_slugs))
+        else:
+            row = _fetchone(conn, f"SELECT title, category FROM topics WHERE is_written = {is_written_false} ORDER BY RANDOM() LIMIT 1")
+    conn.close()
+    if row:
+        return row["title"], row["category"]
+    return "", ""
+
+
+def mark_topic_written(title: str, category: str):
+    conn = get_db()
+    p = _param_style()
+    slug = slugify(title)
+    written_val = "TRUE" if config.is_postgres() else "1"
+    _execute(conn, f"UPDATE topics SET is_written = {written_val} WHERE slug = {p} AND category = {p}",
+             (slug, category))
+    conn.commit()
+    conn.close()
+
+
+def append_topics(new_topics: list[tuple[str, str]]):
+    if not new_topics:
+        return
+    conn = get_db()
+    p = _param_style()
+    ts = now()
+    is_written_val = "FALSE" if config.is_postgres() else "0"
+    for topic, category in new_topics:
+        slug = slugify(topic)
+        try:
+            if config.is_postgres():
+                _execute(conn, f"INSERT INTO topics (title, slug, category, is_written, created_at) VALUES ({p}, {p}, {p}, {is_written_val}, {p}) ON CONFLICT (slug, category) DO NOTHING",
+                         (topic, slug, category, ts))
+            else:
+                _execute(conn, f"INSERT OR IGNORE INTO topics (title, slug, category, is_written, created_at) VALUES ({p}, {p}, {p}, {is_written_val}, {p})",
+                         (topic, slug, category, ts))
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+
+
+def count_unwritten_topics() -> int:
+    conn = get_db()
+    is_written_false = "FALSE" if config.is_postgres() else "0"
+    row = _fetchone(conn, f"SELECT COUNT(*) AS cnt FROM topics WHERE is_written = {is_written_false}")
+    conn.close()
+    return row["cnt"] if row else 0
+
+
 def log_agent_action(agent_name: str, action: str, article_id: int | None = None, details: str = ""):
     conn = get_db()
     ts = now()

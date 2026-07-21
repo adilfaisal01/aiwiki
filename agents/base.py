@@ -1,9 +1,10 @@
-import json
 import os
 import random
 import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
+
+import core.database as db
 
 
 class BaseAgent(ABC):
@@ -69,100 +70,17 @@ TEMPLATES: dict[str, list[str]] = {
     ],
 }
 
-_TOPICS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "topics.json")
-
-_FALLBACK_TOPICS: dict[str, list[str]] = {
-    "history": [
-        "Ancient Civilizations", "The Industrial Revolution", "World War II",
-        "The Renaissance", "The Cold War", "Ancient Rome", "The Silk Road",
-        "The French Revolution", "The Age of Exploration", "The Ottoman Empire",
-    ],
-    "science": [
-        "Quantum Mechanics", "Evolutionary Biology", "Relativity",
-        "Genetics", "Thermodynamics", "Cell Biology", "Plate Tectonics",
-        "The Standard Model", "Neuroscience", "Climate Science",
-    ],
-    "technology": [
-        "The Internet", "Machine Learning", "Blockchain",
-        "Robotics", "Cryptography", "Cloud Computing", "Computer Vision",
-        "Natural Language Processing", "Virtual Reality", "Cybersecurity",
-    ],
-    "culture": [
-        "Jazz Music", "Modern Architecture", "Impressionism",
-        "Cinema of the 20th Century", "Street Art", "Japanese Anime",
-        "Renaissance Art", "Electronic Music", "Surrealism", "Folk Literature",
-    ],
-}
-
-
-def _load_topics() -> dict[str, list[str]]:
-    try:
-        with open(_TOPICS_FILE, "r") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and all(isinstance(v, list) for v in data.values()):
-            return data
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        pass
-    return dict(_FALLBACK_TOPICS)
-
-
-def _save_topics(topics: dict[str, list[str]]):
-    try:
-        os.makedirs(os.path.dirname(_TOPICS_FILE), exist_ok=True)
-        with open(_TOPICS_FILE, "w") as f:
-            json.dump(topics, f, indent=2, ensure_ascii=False)
-    except OSError:
-        pass
-
-
-def append_topics(new_topics: list[tuple[str, str]]):
-    topics = _load_topics()
-    changed = False
-    for topic, category in new_topics:
-        if category not in topics:
-            topics[category] = []
-        if topic not in topics[category]:
-            topics[category].append(topic)
-            changed = True
-    if changed:
-        _save_topics(topics)
-
 
 def get_templates_for_category(category: str) -> dict[str, list[str]]:
     return TEMPLATES
 
 
-def get_topics_for_category(category: str) -> list[str]:
-    topics = _load_topics()
-    return topics.get(category, topics.get("science", []))
-
-
 def pick_topic(category: str | None = None, exclude_slugs: set[str] | None = None) -> tuple[str, str]:
-    topics = _load_topics()
-    if not topics:
-        topics = dict(_FALLBACK_TOPICS)
-    if category and category in topics:
-        candidates = [t for t in topics[category] if not exclude_slugs or _slug_for_topic(t) not in exclude_slugs]
-        if candidates:
-            return random.choice(candidates), category
-    all_candidates = []
-    for cat, ts in topics.items():
-        for t in ts:
-            if not exclude_slugs or _slug_for_topic(t) not in exclude_slugs:
-                all_candidates.append((t, cat))
-    if all_candidates:
-        return random.choice(all_candidates)
-    cat = random.choice(list(_FALLBACK_TOPICS.keys()))
-    return random.choice(_FALLBACK_TOPICS[cat]), cat
+    return db.pick_topic(category=category, exclude_slugs=exclude_slugs)
 
 
-def _slug_for_topic(topic: str) -> str:
-    s = topic.lower().strip()
-    s = "".join(c if c.isalnum() or c in " -_" else "" for c in s)
-    s = s.replace(" ", "_").replace("-", "_")
-    while "__" in s:
-        s = s.replace("__", "_")
-    return s.strip("_")
+def append_topics(new_topics: list[tuple[str, str]]):
+    db.append_topics(new_topics)
 
 
 def category_for_writer(category: str) -> str:
