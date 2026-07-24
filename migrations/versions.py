@@ -1,3 +1,10 @@
+"""Database migration definitions.
+
+Defines all schema migrations as a list of Migration dataclass instances.
+Each migration is a self-contained function that applies a specific schema
+change. Migrations are applied in order by the migration runner.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,13 +16,21 @@ import core.config as config
 
 @dataclass(frozen=True)
 class Migration:
+    """A single database migration.
+
+    Attributes:
+        version: Unique version number (applied in ascending order).
+        name: Human-readable name for the migration.
+        up: Callable that applies the migration given a database connection.
+    """
+
     version: int
     name: str
     up: Callable
 
 
 def _migration_001_initial(conn) -> None:
-    """Baseline marker for databases created before the migration runner existed."""
+    """Record the initial schema version for pre-runner databases."""
     p = db._param_style()
     row = db._fetchone(conn, "SELECT version FROM schema_version LIMIT 1")
     if not row:
@@ -23,6 +38,7 @@ def _migration_001_initial(conn) -> None:
 
 
 def _migration_002_article_ownership(conn) -> None:
+    """Add article_kind and owner_agent_id columns to the articles table."""
     if not db._column_exists(conn, "articles", "article_kind"):
         db._execute(
             conn,
@@ -33,25 +49,30 @@ def _migration_002_article_ownership(conn) -> None:
 
 
 def _migration_003_external_agents_last_seen(conn) -> None:
+    """Add last_seen_at column to the external_agents table."""
     if not db._column_exists(conn, "external_agents", "last_seen_at"):
         db._execute(conn, "ALTER TABLE external_agents ADD COLUMN last_seen_at TEXT")
 
 
 def _migration_004_external_agents_overview(conn) -> None:
+    """Add overview_article_id column to the external_agents table."""
     if not db._column_exists(conn, "external_agents", "overview_article_id"):
         db._execute(conn, "ALTER TABLE external_agents ADD COLUMN overview_article_id INTEGER")
 
 
 def _migration_005_external_agents_webhook(conn) -> None:
+    """Add webhook_url column to the external_agents table."""
     if not db._column_exists(conn, "external_agents", "webhook_url"):
         db._execute(conn, "ALTER TABLE external_agents ADD COLUMN webhook_url TEXT")
 
 
 def _migration_006_backfill_agent_overviews(conn) -> None:
+    """Create overview articles for all external agents missing them."""
     db.backfill_agent_overviews(conn)
 
 
 def _migration_007_agent_presence_status(conn) -> None:
+    """Add presence_status column to the external_agents table."""
     if not db._column_exists(conn, "external_agents", "presence_status"):
         db._execute(conn, "ALTER TABLE external_agents ADD COLUMN presence_status TEXT")
 
@@ -62,6 +83,7 @@ def _migration_007_agent_presence_status(conn) -> None:
 
 
 def _migration_009_users(conn) -> None:
+    """Create the users table for account management."""
     if not db._table_exists(conn, "users"):
         db._execute(
             conn,
@@ -76,11 +98,13 @@ def _migration_009_users(conn) -> None:
 
 
 def _migration_010_user_avatar_url(conn) -> None:
+    """Add avatar_url column to the users table."""
     if not db._column_exists(conn, "users", "avatar_url"):
         db._execute(conn, "ALTER TABLE users ADD COLUMN avatar_url TEXT")
 
 
 def _migration_011_user_email_password(conn) -> None:
+    """Add email and password_hash columns to the users table with unique index."""
     if not db._column_exists(conn, "users", "email"):
         db._execute(conn, "ALTER TABLE users ADD COLUMN email TEXT")
     if not db._column_exists(conn, "users", "password_hash"):
@@ -89,17 +113,20 @@ def _migration_011_user_email_password(conn) -> None:
 
 
 def _migration_012_external_agents_user_id(conn) -> None:
+    """Add user_id column to external_agents and create an index."""
     if not db._column_exists(conn, "external_agents", "user_id"):
         db._execute(conn, "ALTER TABLE external_agents ADD COLUMN user_id TEXT")
     db._execute(conn, "CREATE INDEX IF NOT EXISTS idx_external_agents_user_id ON external_agents(user_id)")
 
 
 def _migration_013_user_locale(conn) -> None:
+    """Add locale column to the users table."""
     if not db._column_exists(conn, "users", "locale"):
         db._execute(conn, "ALTER TABLE users ADD COLUMN locale TEXT")
 
 
 def _migration_014_builtin_agents(conn) -> None:
+    """Create the builtin_agents table and seed initial agent records."""
     if not db._table_exists(conn, "builtin_agents"):
         sid = "SERIAL PRIMARY KEY" if config.is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
         db._execute(
@@ -121,6 +148,7 @@ def _migration_014_builtin_agents(conn) -> None:
 
 
 def _migration_015_user_server_invoke_usage(conn) -> None:
+    """Create the user_server_invoke_usage table for tracking API usage."""
     if not db._table_exists(conn, "user_server_invoke_usage"):
         db._execute(
             conn,
@@ -140,12 +168,13 @@ def _migration_015_user_server_invoke_usage(conn) -> None:
 
 
 def _migration_016_articles_tool_spec(conn) -> None:
+    """Add tool_spec_json column to the articles table for AI tool definitions."""
     if not db._column_exists(conn, "articles", "tool_spec_json"):
         db._execute(conn, "ALTER TABLE articles ADD COLUMN tool_spec_json TEXT")
 
 
 def _migration_017_pending_topics(conn) -> None:
-    """Create pending_topics table for wiki-linked article generation."""
+    """Create the pending_topics table for queued article generation."""
     if db._table_exists(conn, "pending_topics"):
         return
     sid = (
@@ -167,7 +196,7 @@ def _migration_017_pending_topics(conn) -> None:
 
 
 def _migration_018_fix_hardcoded_urls(conn) -> None:
-    """Replace hardcoded http://127.0.0.1:8000/wiki/ and en.wikipedia.org/wiki/ links with relative /wiki/ links."""
+    """Replace hardcoded 127.0.0.1:8000 and en.wikipedia.org/wiki/ links with relative /wiki/ links."""
     import re
     # Fix 127.0.0.1:8000 links
     rows = db._fetchall(conn, "SELECT id, content FROM articles WHERE content LIKE '%127.0.0.1:8000%'")
@@ -201,11 +230,7 @@ def _migration_018_fix_hardcoded_urls(conn) -> None:
 
 
 def _migration_019_fix_wikipedia_links(conn) -> None:
-    """Replace remaining en.wikipedia.org/wiki/ links with relative /wiki/ links.
-
-    Migration 18 ran before the Wikipedia link fix was added, so this catches
-    any articles that still have hardcoded Wikipedia URLs in their See also sections.
-    """
+    """Replace remaining en.wikipedia.org/wiki/ links missed by migration 18."""
     import re
     p = db._param_style()
     for table in ("articles", "revisions"):
@@ -222,7 +247,7 @@ def _migration_019_fix_wikipedia_links(conn) -> None:
 
 
 def _migration_020_topics_table(conn) -> None:
-    """Create topics table for DB-backed topic management."""
+    """Create the topics table for database-backed topic management."""
     if db._table_exists(conn, "topics"):
         return
     sid = db._serial_id()

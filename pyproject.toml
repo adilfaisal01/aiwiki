@@ -25,11 +25,45 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "tier1: Chaos tests that run on every PR",
+    "tier2: Chaos tests that run daily",
+    "tier3: Chaos tests that run weekly",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", ".git"]
+skips = ["B101", "B311"]
+
+[tool.coverage.run]
+source = ["core", "agents", "wiki", "external_api"]
+omit = ["*/tests/*", "*/migrations/*"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
 
 [dependency-groups]
 dev = [
     "requests>=2.32.0",
     "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
     "httpx>=0.28.0",
     "pip-audit>=2.0.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+    "bandit>=1.7.0",
 ]

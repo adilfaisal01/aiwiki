@@ -1,6 +1,14 @@
+"""Agent coordinator — orchestrates the multi-agent article pipeline.
+
+Runs in a background thread during the app lifespan. Each cycle it
+reviews external submissions, improves low-quality articles, and
+creates new articles using the specialist writer agents.
+"""
+
 import json
 import logging
 import re
+import time as _time
 
 from agents.base import BaseAgent, pick_topic, category_for_writer, append_topics, load_prompt
 from agents.llm_client import generate_text, is_real_llm_enabled
@@ -13,11 +21,67 @@ import random
 
 logger = logging.getLogger("aiwiki.coordinator")
 
+_coordinator_backoff_until: float = 0
+_coordinator_empty_cycles: int = 0
+
+
+def _coordinator_circuit_breaker() -> bool:
+    """Check whether the coordinator circuit breaker is open.
+
+    After several empty cycles the coordinator backs off to avoid
+    busy-waiting when no work is available.
+
+    Returns:
+        True if the coordinator should proceed, False if backing off.
+    """
+    global _coordinator_backoff_until, _coordinator_empty_cycles
+    if _time.time() < _coordinator_backoff_until:
+        return False
+    return True
+
+
+def _coordinator_record_empty_cycle():
+    """Record an empty cycle and potentially open the circuit breaker.
+
+    After 3 consecutive empty cycles, applies exponential backoff
+    (capped at 300 seconds).
+    """
+    global _coordinator_backoff_until, _coordinator_empty_cycles
+    _coordinator_empty_cycles += 1
+    if _coordinator_empty_cycles >= 3:
+        backoff = min(300, 60 * (2 ** (_coordinator_empty_cycles - 3)))
+        _coordinator_backoff_until = _time.time() + backoff
+        logger.warning("Coordinator circuit breaker: %d empty cycles, backing off %ds", _coordinator_empty_cycles, backoff)
+
+
+def _coordinator_record_success():
+    """Reset the circuit breaker after a successful cycle."""
+    global _coordinator_backoff_until, _coordinator_empty_cycles
+    _coordinator_backoff_until = 0
+    _coordinator_empty_cycles = 0
+
 INFOBOX_GENERATE_PROMPT = load_prompt("infobox_generate")
 
 
 class Coordinator(BaseAgent):
+    """Orchestrates the multi-agent article pipeline.
+
+    Each cycle the coordinator:
+    1. Reviews external agent submissions (critic + fact-checker).
+    2. Improves low-quality or feedback-flagged articles.
+    3. Creates new articles using historian/scientist agents.
+    """
+
     def __init__(self, historian, scientist, critic, fact_checker, quality_improver):
+        """Initialize the coordinator with all sub-agents.
+
+        Args:
+            historian: Historian agent instance.
+            scientist: Scientist agent instance.
+            critic: Critic agent instance.
+            fact_checker: FactChecker agent instance.
+            quality_improver: QualityImprover agent instance.
+        """
         super().__init__("Coordinator Kai", "coordinator")
         self.historian = historian
         self.scientist = scientist
@@ -26,13 +90,32 @@ class Coordinator(BaseAgent):
         self.quality_improver = quality_improver
 
     def _track(self, agent_name: str, action: str):
-        """Update agent activity in the DB."""
+        """Update agent activity in the DB.
+
+        Args:
+            agent_name: Name of the agent to track.
+            action: Description of the action performed.
+        """
         try:
             db.update_agent_activity(agent_name, action)
         except Exception as e:
             logger.warning("Failed to track agent activity for %s: %s", agent_name, sanitize_log(str(e)))
 
     def act(self, context: dict) -> dict:
+        """Run one full coordinator cycle.
+
+        Steps: review external submissions, improve low-quality articles,
+        create new articles. Uses ThreadPoolExecutor for parallel work.
+
+        Args:
+            context: Unused but required by the BaseAgent interface.
+
+        Returns:
+            Dict with "action" key ("multi", "noop") and results.
+        """
+        if not _coordinator_circuit_breaker():
+            return {"action": "noop", "reason": "circuit breaker open"}
+
         results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -40,20 +123,26 @@ class Coordinator(BaseAgent):
         with ThreadPoolExecutor(max_workers=3) as pool:
             review_futures = [pool.submit(self._review_external_submissions) for _ in range(3)]
             for future in as_completed(review_futures):
-                reviewed = future.result()
-                if reviewed and reviewed.get("action") != "noop":
-                    slug = reviewed.get('slug', 'unknown')
-                    logger.info("[Step] Reviewed external submission: %s", slug)
-                    self._track(self.name, f"reviewed external: {slug}")
-                    results.append(reviewed)
+                try:
+                    reviewed = future.result()
+                    if reviewed and reviewed.get("action") != "noop":
+                        slug = reviewed.get('slug', 'unknown')
+                        logger.info("[Step] Reviewed external submission: %s", slug)
+                        self._track(self.name, f"reviewed external: {slug}")
+                        results.append(reviewed)
+                except Exception as e:
+                    logger.warning("Review submission failed: %s", sanitize_log(str(e)))
 
         # Step 2: Improve existing low-quality articles (up to 3 per cycle)
-        for improved in self._improve_low_quality():
-            if improved and improved.get("action") != "noop":
-                slug = improved.get('slug', 'unknown')
-                logger.info("[Step] Improved article: %s", slug)
-                self._track(self.name, f"improved article: {slug}")
-                results.append(improved)
+        try:
+            for improved in self._improve_low_quality():
+                if improved and improved.get("action") != "noop":
+                    slug = improved.get('slug', 'unknown')
+                    logger.info("[Step] Improved article: %s", slug)
+                    self._track(self.name, f"improved article: {slug}")
+                    results.append(improved)
+        except Exception as e:
+            logger.warning("Improve low quality failed: %s", sanitize_log(str(e)))
 
         # Step 3: Create new articles (parallel — up to 3)
         new_articles = []
@@ -76,19 +165,33 @@ class Coordinator(BaseAgent):
         with ThreadPoolExecutor(max_workers=3) as pool:
             create_futures = [pool.submit(_try_create, w) for w in writer_order]
             for future in as_completed(create_futures):
-                outcome = future.result()
-                if outcome:
-                    result, topic, slug = outcome
-                    results.append(result)
-                    new_articles.append(result)
-                    logger.info("[Step] Created article: %s (slug: %s)", topic, result.get('slug', ''))
+                try:
+                    outcome = future.result()
+                    if outcome:
+                        result, topic, slug = outcome
+                        results.append(result)
+                        new_articles.append(result)
+                        logger.info("[Step] Created article: %s (slug: %s)", topic, result.get('slug', ''))
+                except Exception as e:
+                    logger.warning("Article creation failed: %s", sanitize_log(str(e)))
 
         if results:
+            _coordinator_record_success()
             return {"action": "multi", "steps": results, "batch_size": len(new_articles)}
+        _coordinator_record_empty_cycle()
         return {"action": "noop", "reason": "nothing to do"}
 
     def _review_external_submissions(self) -> dict | None:
-        """Review the oldest external agent submission."""
+        """Review the oldest external agent submission.
+
+        Runs the critic and fact-checker on the oldest pending article,
+        records their feedback as talk messages, and marks the article
+        as reviewed.
+
+        Returns:
+            Result dict with action "reviewed_external", or None if no
+            pending submissions exist.
+        """
         import time, random, sqlite3
         pending = db.get_articles_needing_review()
         if not pending:
@@ -99,12 +202,20 @@ class Coordinator(BaseAgent):
             return None
 
         # Track + run critic (no lock held during LLM call)
-        db.update_agent_activity(self.critic.name, f"reviewing external: {full['title']}")
-        critic_result = self.critic.act({"article": full})
+        try:
+            db.update_agent_activity(self.critic.name, f"reviewing external: {full['title']}")
+            critic_result = self.critic.act({"article": full})
+        except Exception as e:
+            logger.warning("Critic review failed for '%s': %s", full["title"], sanitize_log(str(e)))
+            return None
 
         # Track + run fact-checker
-        db.update_agent_activity(self.fact_checker.name, f"fact-checking external: {full['title']}")
-        fact_result = self.fact_checker.act({"article": full})
+        try:
+            db.update_agent_activity(self.fact_checker.name, f"fact-checking external: {full['title']}")
+            fact_result = self.fact_checker.act({"article": full})
+        except Exception as e:
+            logger.warning("Fact-checker failed for '%s': %s", full["title"], sanitize_log(str(e)))
+            return None
 
         import time as _time
         _time.sleep(0.5)  # Let SQLite settle
@@ -135,7 +246,15 @@ class Coordinator(BaseAgent):
         return {"action": "reviewed_external", "article_id": full["id"], "slug": full["slug"]}
 
     def _improve_low_quality(self) -> list[dict]:
-        """Improve up to 3 low-quality articles per cycle."""
+        """Improve up to 3 low-quality articles per cycle.
+
+        Prioritizes articles with unresolved feedback, then thin articles
+        (under 600 words or fewer than 4 sections). Skips articles that
+        have already been improved 3+ times.
+
+        Returns:
+            List of result dicts from the quality improver.
+        """
         articles = db.get_all_articles()
         if not articles:
             return []
@@ -195,39 +314,55 @@ class Coordinator(BaseAgent):
         max_improvements = 3
 
         for candidate in candidates_with_feedback[:max_improvements]:
-            talk_messages = db.get_talk_messages(candidate["id"])
-            feedback_text = "\n".join(
-                f"- {msg['agent_name']}: {msg['message'][:500]}"
-                for msg in talk_messages
-                if msg["agent_name"] != self.name
-            )
-            result = self.quality_improver.act({"article": candidate, "feedback": feedback_text})
-            if result.get("action") != "noop":
-                self._rebuild_article_infobox(candidate["id"], candidate["title"])
-                db.add_talk_message(
-                    candidate["id"], self.name,
-                    f"Addressed feedback and improved the article. @{candidate.get('title', '')} has been revised."
+            try:
+                talk_messages = db.get_talk_messages(candidate["id"])
+                feedback_text = "\n".join(
+                    f"- {msg['agent_name']}: {msg['message'][:500]}"
+                    for msg in talk_messages
+                    if msg["agent_name"] != self.name
                 )
-                results.append(result)
-                if len(results) >= max_improvements:
-                    return results
+                result = self.quality_improver.act({"article": candidate, "feedback": feedback_text})
+                if result.get("action") != "noop":
+                    self._rebuild_article_infobox(candidate["id"], candidate["title"])
+                    db.add_talk_message(
+                        candidate["id"], self.name,
+                        f"Addressed feedback and improved the article. @{candidate.get('title', '')} has been revised."
+                    )
+                    results.append(result)
+                    if len(results) >= max_improvements:
+                        return results
+            except Exception as e:
+                logger.warning("Failed to improve article '%s': %s", candidate.get("title", "unknown"), sanitize_log(str(e)))
 
         remaining = max_improvements - len(results)
         candidates_thin.sort(key=lambda a: len(a["content"].split()))
 
         for candidate in candidates_thin[:remaining]:
-            self._track(self.quality_improver.name, f"improving: {candidate.get('title', 'article')}")
-            result = self.quality_improver.act({"article": candidate})
-            if result.get("action") != "noop":
-                self._rebuild_article_infobox(candidate["id"], candidate["title"])
-                results.append(result)
-                if len(results) >= max_improvements:
-                    break
+            try:
+                self._track(self.quality_improver.name, f"improving: {candidate.get('title', 'article')}")
+                result = self.quality_improver.act({"article": candidate})
+                if result.get("action") != "noop":
+                    self._rebuild_article_infobox(candidate["id"], candidate["title"])
+                    results.append(result)
+                    if len(results) >= max_improvements:
+                        break
+            except Exception as e:
+                logger.warning("Failed to improve thin article '%s': %s", candidate.get("title", "unknown"), sanitize_log(str(e)))
 
         return results
 
     def _create_from_pending(self, batch_size: int = 2) -> list[dict]:
-        """Create up to batch_size articles from pending See also topics."""
+        """Create up to batch_size articles from pending See also topics.
+
+        Pops topics from the pending queue and either creates a new
+        article or reviews an existing one if the slug already exists.
+
+        Args:
+            batch_size: Maximum number of articles to create.
+
+        Returns:
+            List of result dicts from article creation or review.
+        """
         results = []
         for _ in range(batch_size):
             pending = db.pop_pending_topic()
@@ -244,6 +379,15 @@ class Coordinator(BaseAgent):
         return results
 
     def _rebuild_article_infobox(self, article_id: int, title: str):
+        """Regenerate the infobox for an article after improvement.
+
+        Re-parses the article content into a blueprint, generates a new
+        infobox, and updates the stored article.
+
+        Args:
+            article_id: Database ID of the article.
+            title: Article title.
+        """
         try:
             article = db.get_article_by_id(article_id)
             if not article:
@@ -260,6 +404,19 @@ class Coordinator(BaseAgent):
             logger.warning("Failed to rebuild infobox for '%s': %s", title, sanitize_log(str(e)))
 
     def _create_new(self, topic: str, category: str) -> dict:
+        """Create a new article on the given topic.
+
+        Selects the appropriate writer agent, generates content, verifies
+        topic alignment, builds the article with infobox, persists it,
+        and runs critic + fact-checker review.
+
+        Args:
+            topic: Article topic/title.
+            category: Topic category (determines which writer to use).
+
+        Returns:
+            Result dict with action "created" or "noop".
+        """
         writer = self.historian if category_for_writer(category) == "history" else self.scientist
         self._track(writer.name, f"writing article: {topic}")
         result = writer.act({"topic": topic})
@@ -321,6 +478,19 @@ class Coordinator(BaseAgent):
         return {"action": "created", "article_id": article["id"], "slug": article["slug"], "topic": topic}
 
     def _generate_infobox(self, title: str, category: str, content: str) -> Infobox | None:
+        """Generate an infobox for an article using the LLM.
+
+        Only works when a real LLM provider is configured. Parses the
+        LLM's JSON response into an Infobox object.
+
+        Args:
+            title: Article title.
+            category: Topic category.
+            content: Article content (first 2000 chars used).
+
+        Returns:
+            Infobox object or None if generation fails or LLM is disabled.
+        """
         if not is_real_llm_enabled():
             return None
         prompt = INFOBOX_GENERATE_PROMPT.format(title=title, category=category, content=content[:2000])
@@ -350,6 +520,21 @@ class Coordinator(BaseAgent):
             return None
 
     def _build_article(self, topic: str, category: str, content: str, agent_name: str) -> str:
+        """Assemble the final article with infobox and blueprint rendering.
+
+        Converts markdown content to a blueprint, attaches a generated
+        infobox, and renders the result. Falls back to raw content if
+        blueprint rendering produces insufficient output.
+
+        Args:
+            topic: Article title.
+            category: Topic category.
+            content: Raw article content (markdown or HTML).
+            agent_name: Name of the agent that wrote the content.
+
+        Returns:
+            Rendered article string.
+        """
         blueprint = markdown_to_blueprint(content, topic)
         infobox = self._generate_infobox(topic, category, content)
         if infobox:
@@ -376,7 +561,19 @@ class Coordinator(BaseAgent):
         return content
 
     def _verify_topic_alignment(self, topic: str, content: str) -> bool:
-        """Check that the article content actually matches the given topic."""
+        """Check that the article content actually matches the given topic.
+
+        Verifies that key words from the topic appear in the first 500
+        characters of the content. At least 50% of key words (minimum 1)
+        must be present.
+
+        Args:
+            topic: Expected article topic.
+            content: Article content to verify.
+
+        Returns:
+            True if the content appears to be on-topic, False otherwise.
+        """
         topic_lower = topic.lower()
         # Check if the topic name appears in the first 500 chars of content
         first_500 = content[:500].lower()
@@ -389,6 +586,17 @@ class Coordinator(BaseAgent):
         return matches >= max(1, len(key_words) // 2)
 
     def _review_existing(self, article: dict) -> dict:
+        """Run critic and fact-checker on an existing article.
+
+        Used when a pending topic already has an article — reviews it
+        instead of creating a duplicate.
+
+        Args:
+            article: Article dict from the database.
+
+        Returns:
+            Result dict with action "reviewed".
+        """
         self._track(self.critic.name, f"reviewing: {article['title']}")
         critic_result = self.critic.act({"article": article})
         db.add_talk_message(article["id"], self.critic.name, critic_result["message"])

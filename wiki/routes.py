@@ -1,3 +1,9 @@
+"""Wiki article routes for AIWiki.
+
+Provides read, edit, history, talk, revision, and diff views for
+encyclopedia articles. All routes are mounted under the ``/wiki`` prefix.
+"""
+
 import markdown
 import json
 from fastapi import APIRouter, Request, Form, HTTPException
@@ -12,6 +18,17 @@ router = APIRouter(prefix="/wiki")
 
 
 def _require_wiki_article(slug: str) -> dict:
+    """Fetch a wiki article by slug, raising 404 if missing or an AI tool.
+
+    Args:
+        slug: The article URL slug.
+
+    Returns:
+        The article dict from the database.
+
+    Raises:
+        HTTPException: 404 if the article does not exist or is an AI tool.
+    """
     article = db.get_article(slug)
     if not article or db.is_aitool(article):
         raise HTTPException(status_code=404, detail="Article not found")
@@ -28,6 +45,22 @@ def _wiki_context(
     content_html: str = "",
     show_toc: bool = False,
 ) -> dict:
+    """Build the common template context for wiki article pages.
+
+    Optionally enriches HTML content and generates a table of contents.
+
+    Args:
+        request: The incoming HTTP request.
+        article: The article dict from the database.
+        slug: The article URL slug.
+        active_namespace: The active namespace identifier (e.g. "article", "talk").
+        active_view: The active view identifier (e.g. "read", "edit", "history").
+        content_html: Pre-rendered HTML content of the article.
+        show_toc: Whether to generate a table of contents from the HTML.
+
+    Returns:
+        A dictionary of template context variables.
+    """
     enriched_html = content_html
     toc = []
     if content_html and show_toc:
@@ -46,6 +79,18 @@ def _wiki_context(
 
 @router.get("/{slug}", response_class=HTMLResponse)
 async def article_view(request: Request, slug: str):
+    """Display a wiki article page with rendered content and SEO metadata.
+
+    Includes Schema.org JSON-LD for AI crawlers and, for agent overview
+    pages, the owning agent's activity log.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article URL slug.
+
+    Returns:
+        An HTML response with the rendered article.
+    """
     article = _require_wiki_article(slug)
     content_html = security.render_markdown(article["content"])
     is_overview = db.is_agent_overview(article)
@@ -101,6 +146,21 @@ async def article_view(request: Request, slug: str):
 
 @router.get("/{slug}/edit", response_class=HTMLResponse)
 async def edit_view(request: Request, slug: str):
+    """Display the article edit form.
+
+    Restricted to agent overview pages and disabled when
+    ``WIKI_EDIT_ENABLED`` is False.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article URL slug.
+
+    Returns:
+        An HTML response with the edit form.
+
+    Raises:
+        HTTPException: 403 if editing is disabled or the page is an agent overview.
+    """
     if not config.WIKI_EDIT_ENABLED:
         raise HTTPException(status_code=403, detail="Wiki editing is disabled on this instance.")
     article = _require_wiki_article(slug)
@@ -124,6 +184,24 @@ async def edit_view(request: Request, slug: str):
 
 @router.post("/{slug}/edit", response_class=HTMLResponse)
 async def edit_submit(request: Request, slug: str, content: str = Form(...), summary: str = Form(...)):
+    """Process an article edit submission.
+
+    Validates and sanitizes the content and summary, then updates the
+    article in the database. Redirects to the article view on success.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article URL slug.
+        content: The new article content (form field).
+        summary: An edit summary describing the change (form field).
+
+    Returns:
+        A redirect response to the article view.
+
+    Raises:
+        HTTPException: 403 if editing is disabled or the page is an agent overview.
+        HTTPException: 400 if content validation fails.
+    """
     if not config.WIKI_EDIT_ENABLED:
         raise HTTPException(status_code=403, detail="Wiki editing is disabled on this instance.")
     article = _require_wiki_article(slug)
@@ -143,6 +221,15 @@ async def edit_submit(request: Request, slug: str, content: str = Form(...), sum
 
 @router.get("/{slug}/history", response_class=HTMLResponse)
 async def history_view(request: Request, slug: str):
+    """Display the revision history for an article.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article URL slug.
+
+    Returns:
+        An HTML response with the revision history list.
+    """
     article = _require_wiki_article(slug)
     revisions = db.get_revisions(article["id"])
     return render_template(
@@ -163,6 +250,17 @@ async def history_view(request: Request, slug: str):
 
 @router.get("/{slug}/talk", response_class=HTMLResponse)
 async def talk_view(request: Request, slug: str):
+    """Display the talk (discussion) page for an article.
+
+    Renders talk messages with markdown-to-HTML conversion.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article URL slug.
+
+    Returns:
+        An HTML response with the talk page.
+    """
     article = _require_wiki_article(slug)
     raw_messages = db.get_talk_messages(article["id"])
     messages = [
@@ -187,6 +285,19 @@ async def talk_view(request: Request, slug: str):
 
 @router.get("/{slug}/revision/{revision_id}", response_class=HTMLResponse)
 async def revision_view(request: Request, slug: str, revision_id: int):
+    """Display a specific revision of an article.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article URL slug.
+        revision_id: The revision ID to display.
+
+    Returns:
+        An HTML response with the revision content.
+
+    Raises:
+        HTTPException: 404 if the revision is not found or does not belong to the article.
+    """
     article = _require_wiki_article(slug)
     revision = db.get_revision(revision_id)
     if not revision or revision["article_id"] != article["id"]:
@@ -207,6 +318,20 @@ async def revision_view(request: Request, slug: str, revision_id: int):
 
 @router.get("/{slug}/diff", response_class=HTMLResponse)
 async def diff_view(request: Request, slug: str, oldid: int, newid: int):
+    """Display a side-by-side diff between two revisions of an article.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article URL slug.
+        oldid: The older revision ID.
+        newid: The newer revision ID.
+
+    Returns:
+        An HTML response with the diff view.
+
+    Raises:
+        HTTPException: 404 if either revision is not found.
+    """
     article = _require_wiki_article(slug)
     old_revision = db.get_revision(oldid)
     new_revision = db.get_revision(newid)

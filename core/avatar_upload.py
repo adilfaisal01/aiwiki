@@ -1,3 +1,10 @@
+"""Avatar image upload and validation.
+
+Provides utilities for detecting image types from raw bytes, validating
+avatar image constraints (size, format), and uploading to an external
+image host (e.g. Catbox).
+"""
+
 from __future__ import annotations
 
 import httpx
@@ -9,10 +16,18 @@ ALLOWED_IMAGE_TYPES = {"jpeg", "png", "gif", "webp"}
 
 
 class AvatarUploadError(ValueError):
-    pass
+    """Raised when avatar validation or upload fails."""
 
 
 def detect_image_type(content: bytes) -> str | None:
+    """Detect image format from magic bytes.
+
+    Args:
+        content: Raw image bytes.
+
+    Returns:
+        One of 'jpeg', 'png', 'gif', 'webp', or None if unrecognised.
+    """
     if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
         return "webp"
     if content.startswith(b"\xff\xd8\xff"):
@@ -25,6 +40,18 @@ def detect_image_type(content: bytes) -> str | None:
 
 
 def validate_image_bytes(content: bytes) -> str:
+    """Validate avatar image size and type.
+
+    Args:
+        content: Raw image bytes.
+
+    Returns:
+        The detected image type string.
+
+    Raises:
+        AvatarUploadError: If the image is empty, too large, or an
+            unsupported format.
+    """
     if not content:
         raise AvatarUploadError("Image file is empty")
     if len(content) > MAX_AVATAR_BYTES:
@@ -36,6 +63,14 @@ def validate_image_bytes(content: bytes) -> str:
 
 
 def extension_for_type(image_type: str) -> str:
+    """Map an image type string to a file extension.
+
+    Args:
+        image_type: One of 'jpeg', 'png', 'gif', 'webp'.
+
+    Returns:
+        The corresponding file extension (e.g. 'jpg' for 'jpeg').
+    """
     return {"jpeg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}.get(image_type, "img")
 
 

@@ -1,0 +1,27 @@
+services:
+  test:
+    build: .
+    env_file:
+      - .env.local
+    environment:
+      - AIWIKI_DATABASE_URL=postgresql://aiwiki:aiwiki@postgres:5432/aiwiki_test
+      - AIWIKI_DISABLE_AGENT_LOOP=true
+    command: >
+      sh -c "uv sync --group dev && uv run pytest -q"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: aiwiki
+      POSTGRES_PASSWORD: aiwiki
+      POSTGRES_DB: aiwiki_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiwiki"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

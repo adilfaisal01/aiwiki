@@ -1,3 +1,11 @@
+"""AIWiki — FastAPI application entry point.
+
+Initializes the database, configures middleware (CSP, body size limits,
+account user resolution, security headers), registers all route routers,
+and provides endpoints for health checks, sitemap, search, and the
+agent registration flow.
+"""
+
 import logging
 import threading
 import time
@@ -42,6 +50,7 @@ _db_init_lock = threading.Lock()
 
 
 def _ensure_db():
+    """Initialize and seed the database on first call (thread-safe)."""
     global _db_initialized
     if _db_initialized:
         return
@@ -58,6 +67,7 @@ def _ensure_db():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Application lifespan handler: validate prompts and initialize DB on startup."""
     logger.info("Starting AIWiki.")
     prompt_errors = validate_prompts()
     if prompt_errors:
@@ -72,7 +82,17 @@ app = FastAPI(title="AIWiki", version=config.APP_VERSION, lifespan=lifespan)
 
 @app.middleware("http")
 async def body_size_middleware(request: Request, call_next):
+    """Reject requests with body size exceeding the configured limit.
+
+    Also rejects chunked transfer encoding.
+    """
     content_length = request.headers.get("content-length")
+    transfer_encoding = request.headers.get("transfer-encoding", "").lower()
+    if transfer_encoding == "chunked":
+        return JSONResponse(
+            {"detail": "Transfer-Encoding: chunked is not supported"},
+            status_code=413,
+        )
     if content_length and int(content_length) > config.MAX_REQUEST_BODY_BYTES:
         return JSONResponse(
             {"detail": "Request body too large"},
@@ -83,6 +103,11 @@ async def body_size_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def account_user_middleware(request: Request, call_next):
+    """Resolve the current account user and locale for every request.
+
+    Sets request.state.account_user, request.state.locale, and
+    request.state.site_section.
+    """
     if request.url.path.startswith(("/static", "/health", "/theme.css", "/codehilite.css")):
         request.state.account_user = None
     else:
@@ -99,6 +124,11 @@ async def account_user_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
+    """Apply security headers (CSP, X-Frame-Options, Cache-Control, etc.).
+
+    Generates a CSP nonce per request and sets caching policies for
+    static vs dynamic content.
+    """
     request.state.csp_nonce = secrets.token_urlsafe(16)
     request.state.static_version = static_version()
     response = await call_next(request)
@@ -128,6 +158,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def db_init_middleware(request: Request, call_next):
+    """Ensure the database is initialized before handling non-static requests."""
     if not request.url.path.startswith(("/static", "/health", "/theme.css", "/codehilite.css")):
         _ensure_db()
     return await call_next(request)
@@ -135,6 +166,7 @@ async def db_init_middleware(request: Request, call_next):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    """Return JSON errors for API routes and HTML for page routes."""
     if request.url.path.startswith("/api/v1") or request.url.path.startswith("/manage-agents"):
         headers = dict(exc.headers or {})
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=headers)
@@ -145,6 +177,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(ExceptionGroup)
 async def exception_group_handler(request: Request, exc: ExceptionGroup):
+    """Unwrap ExceptionGroup and delegate to the appropriate handler."""
     inner = exc.exceptions[0]
     if isinstance(inner, HTTPException):
         return await http_exception_handler(request, inner)
@@ -153,6 +186,7 @@ async def exception_group_handler(request: Request, exc: ExceptionGroup):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: BaseException):
+    """Catch-all exception handler returning JSON or HTML based on route prefix."""
     logger.exception("Unhandled exception")
     if request.url.path.startswith("/api/v1") or request.url.path.startswith("/manage-agents"):
         return JSONResponse({"detail": "Internal server error"}, status_code=500)
@@ -167,6 +201,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/theme.css")
 async def theme_stylesheet():
+    """Serve the current theme CSS dynamically."""
     return Response(
         content=get_theme_css(),
         media_type="text/css",
@@ -176,6 +211,7 @@ async def theme_stylesheet():
 
 @app.get("/codehilite.css")
 async def codehilite_stylesheet():
+    """Serve Pygments syntax highlighting CSS."""
     return Response(
         content=get_pygments_css(),
         media_type="text/css",
@@ -199,6 +235,7 @@ app.include_router(pricing_router)
 
 @app.get("/health")
 async def health():
+    """Health check endpoint returning DB status, version, and agent loop info."""
     db_start = time.perf_counter()
     try:
         _ensure_db()
@@ -232,7 +269,10 @@ async def health():
 
 @app.get("/admin/backup")
 async def admin_backup():
-    """Download a SQLite dump of the database for offsite backup."""
+    """Download a SQLite dump of the database for offsite backup.
+
+    Only available when using a SQLite database.
+    """
     import sqlite3, os as _os, io
     db_path = _os.path.join(_os.path.dirname(__file__), "data", "aiwiki.db")
     if not _os.path.exists(db_path):
@@ -255,7 +295,7 @@ async def admin_backup():
 
 @app.get("/robots.txt", response_class=Response)
 async def robots_txt():
-    """Welcome all AI crawlers and search engines."""
+    """Serve robots.txt welcoming all crawlers including AI agents."""
     content = """User-agent: *
 Allow: /
 Sitemap: https://ollamapedia.up.railway.app/sitemap.xml
@@ -284,7 +324,10 @@ Allow: /
 
 @app.get("/sitemap.xml", response_class=Response)
 async def sitemap_xml():
-    """Generate a sitemap of all articles for search engines and AI crawlers."""
+    """Generate a sitemap of all articles for search engines and AI crawlers.
+
+    Includes all encyclopedia articles and main site pages.
+    """
     articles = db.get_all_articles()
     urls = []
     for a in articles:
@@ -318,7 +361,7 @@ async def sitemap_xml():
 
 @app.get("/api/v1/rag/{slug}")
 async def rag_article(slug: str):
-    """RAG-optimized endpoint: returns article as clean JSON for AI retrieval pipelines."""
+    """Return article as clean JSON for AI retrieval pipelines (RAG-optimized)."""
     article = db.get_article(slug)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -334,6 +377,7 @@ async def rag_article(slug: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    """Render the home page with featured articles, recent changes, and article of the day."""
     try:
         portal = home_portal_data(featured_limit=20, recent_limit=8)
         articles = portal["articles"]
@@ -360,6 +404,16 @@ async def index(request: Request):
 
 @app.get("/search", response_class=HTMLResponse)
 async def search_page(request: Request, q: str = Query("", max_length=200), scope: str = Query("wiki")):
+    """Render search results for articles or AI tools.
+
+    Args:
+        request: The incoming HTTP request.
+        q: The search query string.
+        scope: Search scope — "wiki" for articles, "tools" for AI tools.
+
+    Returns:
+        HTML response with search results.
+    """
     query = q.strip()
     if scope == "tools" and config.AITOOLS_ENABLED:
         results = db.search_aitools(query, 30) if query else []
@@ -374,6 +428,7 @@ async def search_page(request: Request, q: str = Query("", max_length=200), scop
 
 @app.get("/recent-changes", response_class=HTMLResponse)
 async def recent_changes(request: Request):
+    """Render the recent changes page showing the latest 50 article edits."""
     try:
         changes = db.get_recent_changes(50)
     except Exception:
@@ -384,6 +439,7 @@ async def recent_changes(request: Request):
 
 @app.get("/random")
 async def random_article():
+    """Redirect to a random encyclopedia article (excluding agent_overview and aitool kinds)."""
     articles = [a for a in db.get_all_articles() if a.get("article_kind", "encyclopedia") not in ("agent_overview", "aitool")]
     if not articles:
         return RedirectResponse(url="/")
@@ -393,16 +449,29 @@ async def random_article():
 
 @app.get("/agents", response_class=HTMLResponse)
 async def agents_page(request: Request):
+    """Render the agents overview page."""
     return render_template(request, "agents.html")
 
 
 @app.get("/register-agent", response_class=HTMLResponse)
 async def register_agent_page(request: Request):
+    """Render the agent registration form page."""
     return render_template(request, "register_agent.html")
 
 
 @app.post("/register-agent", response_class=HTMLResponse)
 async def register_agent_submit(request: Request):
+    """Handle agent registration form submission.
+
+    Validates the agent name, registers the agent, and returns the
+    generated API key. Rate-limited per IP address.
+
+    Args:
+        request: The incoming HTTP request with form data.
+
+    Returns:
+        HTML response with the registration result or error.
+    """
     ip = client_ip(request)
     if not registration_rate_limiter.allow(f"register:{ip}"):
         retry = registration_rate_limiter.retry_after(f"register:{ip}")

@@ -1,3 +1,10 @@
+"""Account API routes (JSON responses).
+
+Provides RESTful endpoints for account registration, login, logout,
+profile updates, avatar upload, locale preferences, API key linking,
+and usage statistics.
+"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
@@ -19,28 +26,47 @@ router = APIRouter(prefix="/api/v1/account")
 
 
 class AvatarUpdate(BaseModel):
+    """Request body for updating the user's avatar URL."""
+
     avatar_url: str | None = None
 
 
 class RegisterRequest(BaseModel):
+    """Request body for account registration."""
+
     email: str
     password: str
 
 
 class LoginRequest(BaseModel):
+    """Request body for account login."""
+
     email: str
     password: str
 
 
 class LinkApisRequest(BaseModel):
+    """Request body for linking external API keys to the user."""
+
     api_keys: list[str]
 
 
 class LocaleUpdate(BaseModel):
+    """Request body for updating the user's locale preference."""
+
     locale: str
 
 
 def _set_account_cookie(response: JSONResponse, session_token: str) -> JSONResponse:
+    """Set the account session cookie on the response.
+
+    Args:
+        response: The JSON response to attach the cookie to.
+        session_token: The session token value.
+
+    Returns:
+        The same response with the cookie set.
+    """
     response.set_cookie(
         key=accounts.ACCOUNT_COOKIE,
         value=session_token,
@@ -53,6 +79,15 @@ def _set_account_cookie(response: JSONResponse, session_token: str) -> JSONRespo
 
 
 def _set_locale_cookie(response: JSONResponse, locale: str | None) -> JSONResponse:
+    """Set the locale cookie on the response.
+
+    Args:
+        response: The JSON response to attach the cookie to.
+        locale: The locale string, or None to use the default.
+
+    Returns:
+        The same response with the cookie set.
+    """
     response.set_cookie(
         key=i18n.LOCALE_COOKIE,
         value=i18n.normalize_locale(locale),
@@ -65,10 +100,29 @@ def _set_locale_cookie(response: JSONResponse, locale: str | None) -> JSONRespon
 
 
 def _current_user(request: Request) -> dict | None:
+    """Retrieve the current authenticated user from the request.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The user dict, or None if not authenticated.
+    """
     return accounts.user_from_request(request)
 
 
 def _require_user(request: Request) -> dict:
+    """Retrieve the current user or raise a 401 error.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The authenticated user dict.
+
+    Raises:
+        HTTPException: If the user is not signed in.
+    """
     user = _current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not signed in")
@@ -76,6 +130,18 @@ def _require_user(request: Request) -> dict:
 
 
 def _validate_credentials(email: str, password: str) -> tuple[str, str]:
+    """Validate email and password format.
+
+    Args:
+        email: The email string to validate.
+        password: The password string to validate.
+
+    Returns:
+        A tuple of (validated_email, validated_password).
+
+    Raises:
+        HTTPException: If validation fails.
+    """
     try:
         return security.validate_email(email), security.validate_password(password)
     except security.ValidationError as exc:
@@ -84,6 +150,14 @@ def _validate_credentials(email: str, password: str) -> tuple[str, str]:
 
 @router.get("")
 async def get_account(request: Request):
+    """Get the current account status and public profile.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A dict with authentication status and public user info.
+    """
     user = _current_user(request)
     if not user:
         return {
@@ -99,6 +173,20 @@ async def get_account(request: Request):
 
 @router.post("")
 async def register_account(request: Request, body: RegisterRequest):
+    """Register a new account or complete partial registration.
+
+    Rate-limited per IP address.
+
+    Args:
+        request: The incoming HTTP request.
+        body: The registration payload with email and password.
+
+    Returns:
+        JSON response with the public user profile and session cookie.
+
+    Raises:
+        HTTPException: 409 if email already exists, 429 on rate limit.
+    """
     email, password = _validate_credentials(body.email, body.password)
     existing = _current_user(request)
 
@@ -138,6 +226,20 @@ async def register_account(request: Request, body: RegisterRequest):
 
 @router.post("/login")
 async def login_account(request: Request, body: LoginRequest):
+    """Authenticate a user with email and password.
+
+    Rate-limited per IP address.
+
+    Args:
+        request: The incoming HTTP request.
+        body: The login payload with email and password.
+
+    Returns:
+        JSON response with the public user profile and session cookie.
+
+    Raises:
+        HTTPException: 401 if credentials are invalid, 429 on rate limit.
+    """
     email, password = _validate_credentials(body.email, body.password)
 
     ip = client_ip(request)
@@ -160,6 +262,18 @@ async def login_account(request: Request, body: LoginRequest):
 
 @router.patch("")
 async def update_account(request: Request, body: AvatarUpdate):
+    """Update the authenticated user's avatar URL.
+
+    Args:
+        request: The incoming HTTP request.
+        body: The avatar update payload.
+
+    Returns:
+        The updated public user profile.
+
+    Raises:
+        HTTPException: 400 if the avatar URL is invalid, 404 if not found.
+    """
     user = _require_user(request)
     try:
         avatar_url = security.validate_avatar_url(body.avatar_url)
@@ -174,6 +288,21 @@ async def update_account(request: Request, body: AvatarUpdate):
 
 @router.post("/avatar-upload")
 async def upload_avatar(request: Request, file: UploadFile = File(...)):
+    """Upload and set a new avatar image.
+
+    Validates the image, uploads to an external host, and updates the
+    user's avatar URL. Rate-limited per IP address.
+
+    Args:
+        request: The incoming HTTP request.
+        file: The uploaded image file.
+
+    Returns:
+        The updated public user profile.
+
+    Raises:
+        HTTPException: 400 on invalid image, 429 on rate limit, 502 on upload failure.
+    """
     user = _require_user(request)
     ip = client_ip(request)
     if not api_rate_limiter.allow(f"avatar:{ip}"):
@@ -205,6 +334,18 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
 
 @router.patch("/locale")
 async def update_account_locale(request: Request, body: LocaleUpdate):
+    """Update the authenticated user's locale preference.
+
+    Args:
+        request: The incoming HTTP request.
+        body: The locale update payload.
+
+    Returns:
+        JSON response with the updated public user profile and locale cookie.
+
+    Raises:
+        HTTPException: 400 if the locale is unsupported, 404 if not found.
+    """
     user = _require_user(request)
     locale = i18n.normalize_locale(body.locale)
     if locale not in i18n.SUPPORTED_LOCALES:
@@ -218,6 +359,11 @@ async def update_account_locale(request: Request, body: LocaleUpdate):
 
 @router.post("/logout")
 async def logout_account():
+    """Log out the current user by clearing the session cookie.
+
+    Returns:
+        JSON response confirming logout.
+    """
     response = JSONResponse({"ok": True})
     response.delete_cookie(key=accounts.ACCOUNT_COOKIE, path="/")
     return response
@@ -225,12 +371,28 @@ async def logout_account():
 
 @router.get("/apis")
 async def list_account_apis(request: Request):
+    """List external API agents linked to the authenticated user.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A dict with the list of linked external agents.
+    """
     user = _require_user(request)
     return {"agents": db.get_external_agents_by_user_id(user["id"])}
 
 
 @router.get("/usage")
 async def get_account_usage(request: Request):
+    """Get usage statistics for the authenticated user.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A usage summary dict localized to the user's locale.
+    """
     user = _require_user(request)
     locale = i18n.resolve_locale(request, user)
     return account_usage_summary(user, locale)
@@ -238,6 +400,18 @@ async def get_account_usage(request: Request):
 
 @router.post("/apis/link")
 async def link_account_apis(request: Request, body: LinkApisRequest):
+    """Link external API keys to the authenticated user.
+
+    Processes each key and reports the outcome (linked, already linked,
+    invalid, or conflict).
+
+    Args:
+        request: The incoming HTTP request.
+        body: The payload with a list of API keys to link.
+
+    Returns:
+        A dict with the updated agent list and per-outcome counts.
+    """
     user = _require_user(request)
     linked = []
     already = []

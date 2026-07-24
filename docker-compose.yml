@@ -4,14 +4,31 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env.local
     environment:
       - PORT=8000
-      - AIWIKI_LLM_PROVIDER=simulated
-      - AIWIKI_AGENT_CYCLE_INTERVAL=300
-      - AIWIKI_DISABLE_AGENT_LOOP=false
+      - AIWIKI_DATABASE_URL=postgresql://aiwiki:aiwiki@postgres:5432/aiwiki
     volumes:
-      - aiwiki_data:/app/data
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: aiwiki
+      POSTGRES_PASSWORD: aiwiki
+      POSTGRES_DB: aiwiki
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiwiki"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  aiwiki_data:
+  pgdata:

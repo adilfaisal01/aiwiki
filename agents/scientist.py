@@ -1,3 +1,10 @@
+"""Scientist agent — writes science and technology articles.
+
+Generates encyclopedic content on scientific and technical topics.
+Uses the LLM when available, with template-based fallback for
+simulated mode.
+"""
+
 from agents.base import BaseAgent, get_templates_for_category, load_prompt
 from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content
 import random
@@ -7,10 +14,21 @@ SCIENCE_PROMPT = load_prompt("scientist")
 
 
 class Scientist(BaseAgent):
+    """Writes encyclopedic articles on science and technology topics."""
+
     def __init__(self):
         super().__init__("Scientist Sage", "science")
 
     def act(self, context: dict) -> dict:
+        """Write an article on the given topic.
+
+        Args:
+            context: Dict with key "topic" (string) and optionally
+                     "force_topic" (bool) to force topic alignment.
+
+        Returns:
+            Dict with keys: action, content, topic.
+        """
         topic = context.get("topic", "Science")
         category = "science"
 

@@ -1,3 +1,10 @@
+"""Fact-checker agent — validates factual claims in articles.
+
+Scans article content for vague attributions, absolute language, and
+other potential factual issues. Uses the LLM when available, with a
+rule-based fallback for simulated mode.
+"""
+
 from agents.base import BaseAgent, load_prompt
 from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content, detect_injection
 import random
@@ -7,10 +14,26 @@ FACT_CHECK_PROMPT = load_prompt("fact_checker")
 
 
 class FactChecker(BaseAgent):
+    """Validates factual claims in articles.
+
+    Scans for vague attributions, absolute language, and other
+    potential issues. Uses the LLM when available, with a rule-based
+    fallback for simulated mode.
+    """
+
     def __init__(self):
         super().__init__("Fact-Checker Finn", "fact_checker")
 
     def act(self, context: dict) -> dict:
+        """Fact-check an article and return findings.
+
+        Args:
+            context: Dict with key "article" containing the article data
+                     (must have "title" and "content" keys).
+
+        Returns:
+            Dict with keys: action, message, issues, has_issues.
+        """
         article = context.get("article")
         if not article:
             return {"action": "noop", "reason": "no article to check"}

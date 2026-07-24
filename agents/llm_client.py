@@ -1,3 +1,11 @@
+"""LLM client — unified interface for multiple AI providers.
+
+Provides text generation across OpenAI, Anthropic, and Ollama providers
+with circuit-breaker failure handling, prompt injection detection, and
+content wrapping utilities.
+"""
+
+import time
 from typing import Iterator
 
 import httpx
@@ -5,29 +13,102 @@ import httpx
 from core import config
 
 
+_circuit_broken_until: float = 0
+_consecutive_failures: int = 0
+
+
+def _circuit_breaker_allow() -> bool:
+    """Check whether the LLM circuit breaker allows requests.
+
+    After 3 consecutive failures, the breaker opens for 5 minutes.
+
+    Returns:
+        True if requests are allowed, False if breaker is open.
+    """
+    global _circuit_broken_until, _consecutive_failures
+    if time.time() < _circuit_broken_until:
+        return False
+    return True
+
+
+def _circuit_breaker_record_failure():
+    """Record an LLM failure and open the breaker if threshold reached."""
+    global _circuit_broken_until, _consecutive_failures
+    _consecutive_failures += 1
+    if _consecutive_failures >= 3:
+        _circuit_broken_until = time.time() + 300
+        import logging
+        logging.getLogger("aiwiki.llm").warning("LLM circuit breaker opened — skipping calls for 5 minutes")
+
+
+def _circuit_breaker_record_success():
+    """Reset the circuit breaker after a successful LLM call."""
+    global _circuit_broken_until, _consecutive_failures
+    _circuit_broken_until = 0
+    _consecutive_failures = 0
+
+
 def _provider() -> str:
+    """Return the configured LLM provider name, lowercased."""
     return config.LLM_PROVIDER.lower().strip()
 
 
 def _model() -> str:
+    """Return the configured LLM model name."""
     return config.LLM_MODEL
 
 
 def generate_text(prompt: str, temperature: float = 0.7, max_tokens: int = 2000) -> str:
-    """Generate text using the configured LLM provider."""
+    """Generate text using the configured LLM provider.
+
+    Routes to the appropriate provider backend (OpenAI, Anthropic,
+    Ollama) and implements circuit-breaker failure handling.
+
+    Args:
+        prompt: The prompt text to send to the LLM.
+        temperature: Sampling temperature (0.0 = deterministic).
+        max_tokens: Maximum tokens in the generated response.
+
+    Returns:
+        Generated text string, or empty string on failure or if
+        the circuit breaker is open.
+    """
+    if not _circuit_breaker_allow():
+        return ""
     provider = _provider()
     if provider == "simulated":
         return ""
-    if provider == "openai":
-        return _openai_generate(prompt, temperature, max_tokens)
-    if provider == "anthropic":
-        return _anthropic_generate(prompt, temperature, max_tokens)
-    if provider in ("ollama", "ollama_openai"):
-        return _ollama_generate(prompt, temperature, max_tokens)
-    raise ValueError(f"Unknown LLM provider: {provider}")
+    try:
+        if provider == "openai":
+            result = _openai_generate(prompt, temperature, max_tokens)
+        elif provider == "anthropic":
+            result = _anthropic_generate(prompt, temperature, max_tokens)
+        elif provider in ("ollama", "ollama_openai"):
+            result = _ollama_generate(prompt, temperature, max_tokens)
+        else:
+            raise ValueError(f"Unknown LLM provider: {provider}")
+        _circuit_breaker_record_success()
+        return result
+    except Exception:
+        _circuit_breaker_record_failure()
+        return ""
 
 
 def _openai_generate(prompt: str, temperature: float, max_tokens: int) -> str:
+    """Call the OpenAI chat completions API.
+
+    Args:
+        prompt: User prompt text.
+        temperature: Sampling temperature.
+        max_tokens: Maximum response tokens.
+
+    Returns:
+        Generated text string.
+
+    Raises:
+        RuntimeError: If OPENAI_API_KEY is not set.
+        httpx.HTTPError: On API request failure.
+    """
     api_key = config.OPENAI_API_KEY
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set")
@@ -51,6 +132,20 @@ def _openai_generate(prompt: str, temperature: float, max_tokens: int) -> str:
 
 
 def _anthropic_generate(prompt: str, temperature: float, max_tokens: int) -> str:
+    """Call the Anthropic messages API.
+
+    Args:
+        prompt: User prompt text.
+        temperature: Sampling temperature.
+        max_tokens: Maximum response tokens.
+
+    Returns:
+        Generated text string.
+
+    Raises:
+        RuntimeError: If ANTHROPIC_API_KEY is not set.
+        httpx.HTTPError: On API request failure.
+    """
     api_key = config.ANTHROPIC_API_KEY
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is not set")
@@ -75,6 +170,21 @@ def _anthropic_generate(prompt: str, temperature: float, max_tokens: int) -> str
 
 
 def _ollama_generate(prompt: str, temperature: float, max_tokens: int) -> str:
+    """Call the Ollama API with retry and fallback logic.
+
+    Tries the native /api/generate endpoint first (up to 3 retries),
+    then falls back to the OpenAI-compatible /v1/chat/completions
+    endpoint (up to 2 retries). Includes random jitter for rate
+    limiting avoidance.
+
+    Args:
+        prompt: User prompt text.
+        temperature: Sampling temperature.
+        max_tokens: Maximum response tokens.
+
+    Returns:
+        Generated text string, or empty string if all retries fail.
+    """
     import random, time
     base_url = config.OLLAMA_BASE_URL.rstrip("/")
     api_key = config.OLLAMA_API_KEY
@@ -170,7 +280,17 @@ Text to check:
 
 
 def detect_injection(content: str) -> bool:
-    """Check if content contains prompt injection attempts using a separate LLM call."""
+    """Check if content contains prompt injection attempts.
+
+    Uses a separate LLM call with a dedicated detection prompt.
+    Only works when a real LLM provider is configured.
+
+    Args:
+        content: Text to check for injection attempts.
+
+    Returns:
+        True if injection is detected, False otherwise.
+    """
     if not is_real_llm_enabled():
         return False
     try:
@@ -181,13 +301,26 @@ def detect_injection(content: str) -> bool:
 
 
 def wrap_content(content: str) -> str:
-    """Wrap user-provided content in a delimiter to prevent prompt injection.
-    
-    The model is instructed to treat anything between the delimiters as data,
-    not as instructions. This is defense-in-depth on top of input sanitization.
+    """Wrap user-provided content in delimiters to prevent prompt injection.
+
+    The model is instructed to treat anything between the delimiters as
+    data, not as instructions. This is defense-in-depth on top of input
+    sanitization.
+
+    Args:
+        content: Raw content string to wrap.
+
+    Returns:
+        Content wrapped in <ARTICLE_CONTENT> tags.
     """
     return f"<ARTICLE_CONTENT>\n{content}\n</ARTICLE_CONTENT>"
 
 
 def is_real_llm_enabled() -> bool:
+    """Check whether a real (non-simulated) LLM provider is configured.
+
+    Returns:
+        True if the provider is set to something other than "simulated"
+        or empty string.
+    """
     return _provider() not in ("simulated", "")

@@ -1,3 +1,10 @@
+"""Seed data for initial database population.
+
+Provides seed articles, tools, and functions to populate a fresh
+database with starter content and sync seed tools to the latest
+blueprint layout.
+"""
+
 import core.database as db
 from aitools.tool_blueprint import example_tool_blueprint, web_search_tool_blueprint
 from aitools.tool_spec import tool_spec_from_blueprint
@@ -109,18 +116,41 @@ SEED_TOOLS = [
 
 
 def _seed_tool_content(tool_data: dict) -> str:
+    """Render the article blueprint content for a seed tool.
+
+    Args:
+        tool_data: A dict with a "blueprint" key (callable or object).
+
+    Returns:
+        The rendered article content as a string.
+    """
     blueprint = tool_data["blueprint"]
     return render_article_blueprint(blueprint() if callable(blueprint) else blueprint)
 
 
 def _seed_tool_spec_json(tool_data: dict) -> str | None:
+    """Generate the tool spec JSON for a seed tool blueprint.
+
+    Args:
+        tool_data: A dict with a "blueprint" key (callable or object).
+
+    Returns:
+        The tool spec JSON string, or None if the blueprint has no tool.
+    """
     blueprint = tool_data["blueprint"]
     bp = blueprint() if callable(blueprint) else blueprint
     return tool_spec_from_blueprint(bp.tool)
 
 
 def _ensure_seed_tools() -> int:
-    """Create any missing seed tools (e.g. after new tools are added)."""
+    """Create any missing seed tools in the database.
+
+    Only runs when AITOOLS_ENABLED is True. Skips tools whose slug
+    already exists.
+
+    Returns:
+        The number of tools created.
+    """
     from core import config
 
     if not config.AITOOLS_ENABLED:
@@ -146,7 +176,14 @@ def _ensure_seed_tools() -> int:
 
 
 def _sync_seed_tools() -> int:
-    """Upgrade known seed tools to the latest blueprint layout (e.g. infobox)."""
+    """Upgrade existing seed tools to the latest blueprint layout.
+
+    Only runs when AITOOLS_ENABLED is True. Updates content and tool
+    spec if they differ from the current blueprint.
+
+    Returns:
+        The number of tools updated.
+    """
     from core import config
 
     if not config.AITOOLS_ENABLED:
@@ -178,6 +215,12 @@ def _sync_seed_tools() -> int:
 
 
 def seed_database():
+    """Populate the database with seed articles and tools.
+
+    Creates seed articles if the articles table is empty. Also ensures
+    seed tools are present and synced to the latest blueprint when
+    AITOOLS_ENABLED is True.
+    """
     existing = db.get_all_articles()
     if not existing:
         for article_data in SEED_ARTICLES:

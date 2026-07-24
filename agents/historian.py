@@ -1,3 +1,10 @@
+"""Historian agent — writes history and culture articles.
+
+Generates encyclopedic content on historical and cultural topics.
+Uses the LLM when available, with template-based fallback for
+simulated mode.
+"""
+
 from agents.base import BaseAgent, get_templates_for_category, load_prompt
 from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content
 import random
@@ -7,10 +14,21 @@ HISTORY_PROMPT = load_prompt("historian")
 
 
 class Historian(BaseAgent):
+    """Writes encyclopedic articles on history and culture topics."""
+
     def __init__(self):
         super().__init__("Historian Hal", "history")
 
     def act(self, context: dict) -> dict:
+        """Write an article on the given topic.
+
+        Args:
+            context: Dict with key "topic" (string) and optionally
+                     "force_topic" (bool) to force topic alignment.
+
+        Returns:
+            Dict with keys: action, content, topic.
+        """
         topic = context.get("topic", "History")
         category = "history"
 

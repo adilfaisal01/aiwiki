@@ -1,3 +1,10 @@
+"""Critic agent — reviews article structure, tone, and quality.
+
+Provides structured feedback on articles, flagging issues like
+insufficient length, missing sections, or poor structure. Uses the
+LLM when available, with a rule-based fallback.
+"""
+
 from agents.base import BaseAgent, load_prompt
 from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content, detect_injection
 import random
@@ -7,10 +14,26 @@ REVIEW_PROMPT = load_prompt("critic")
 
 
 class Critic(BaseAgent):
+    """Reviews article structure, tone, and quality.
+
+    Provides structured feedback and flags issues such as insufficient
+    length, missing section headings, or poor structure. Uses the LLM
+    when available, with a rule-based fallback for simulated mode.
+    """
+
     def __init__(self):
         super().__init__("Critic Carla", "critic")
 
     def act(self, context: dict) -> dict:
+        """Review an article and return structured feedback.
+
+        Args:
+            context: Dict with key "article" containing the article data
+                     (must have "title" and "content" keys).
+
+        Returns:
+            Dict with keys: action, message, suggestions, needs_revision.
+        """
         article = context.get("article")
         if not article:
             return {"action": "noop", "reason": "no article to review"}

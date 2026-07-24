@@ -1,7 +1,15 @@
+"""Database access layer for AIWiki.
+
+Provides all CRUD operations for articles, revisions, talk messages, agents,
+topics, and user accounts.  Supports both SQLite and PostgreSQL backends
+with transparent parameter-style switching.
+"""
+
 import hashlib
 import re
 import secrets
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +25,15 @@ def sanitize(text: str, max_len: int = 200) -> str:
 
 
 def prepare_article_content(content: str, max_len: int = 500_000) -> str:
+    """Sanitise article content, preserving HTML for blueprint/mirror articles.
+
+    Args:
+        content: The raw article content.
+        max_len: Maximum allowed length (default 500,000).
+
+    Returns:
+        The cleaned and truncated content.
+    """
     """Store encyclopedia article bodies; preserve HTML for blueprint/mirror articles."""
     content = content.replace("\x00", "")
     if content.lstrip().startswith("<"):
@@ -27,6 +44,7 @@ from core import config
 
 
 def _sqlite_path() -> Path:
+    """Resolve the SQLite database file path from the DATABASE_URL config."""
     url = config.DATABASE_URL
     prefix = "sqlite:///"
     if url.startswith(prefix):
@@ -37,6 +55,7 @@ def _sqlite_path() -> Path:
 
 
 def _get_sqlite():
+    """Open a SQLite connection with WAL mode, busy timeout, and foreign keys."""
     import sqlite3
     db_path = _sqlite_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +72,7 @@ def _get_sqlite():
 
 
 def _get_postgres():
+    """Open a PostgreSQL connection using psycopg2 with SSL preferred."""
     import psycopg2
     import psycopg2.extras
     cfg = config.get_postgres_config()
@@ -66,12 +86,18 @@ def _get_postgres():
 
 
 def get_db():
+    """Get a database connection for the configured backend (SQLite or PostgreSQL).
+
+    Returns:
+        A database connection object.
+    """
     if config.is_postgres():
         return _get_postgres()
     return _get_sqlite()
 
 
 def _fetchone(conn, query, params=()):
+    """Execute a query and return the first row as a dict, or None."""
     if config.is_postgres():
         import psycopg2.extras
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -85,6 +111,7 @@ def _fetchone(conn, query, params=()):
 
 
 def _fetchall(conn, query, params=()):
+    """Execute a query and return all rows as a list of dicts."""
     if config.is_postgres():
         import psycopg2.extras
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -98,6 +125,7 @@ def _fetchall(conn, query, params=()):
 
 
 def _execute(conn, query, params=()):
+    """Execute a query with retry logic for SQLite locked-database errors."""
     if config.is_postgres():
         cur = conn.cursor()
         cur.execute(query, params)
@@ -116,6 +144,7 @@ def _execute(conn, query, params=()):
 
 
 def _execute_returning(conn, query, params=()):
+    """Execute an INSERT and return the last inserted row ID."""
     if config.is_postgres():
         cur = conn.cursor()
         cur.execute(query, params)
@@ -135,18 +164,25 @@ def _execute_returning(conn, query, params=()):
 
 
 def _param_style():
+    """Return the parameter placeholder for the current backend (``%s`` or ``?``)."""
     return "%s" if config.is_postgres() else "?"
 
 
 def _serial_id():
+    """Return the auto-increment column DDL for the current backend."""
     return "SERIAL PRIMARY KEY" if config.is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
 
 def _bool_type():
+    """Return the boolean column type for the current backend (``BOOLEAN`` or ``INTEGER``)."""
     return "BOOLEAN" if config.is_postgres() else "INTEGER"
 
 
 def init_db():
+    """Create all required tables, indexes, and run pending migrations.
+
+    Idempotent — safe to call on every application startup.
+    """
     conn = get_db()
     p = _param_style()
     sid = _serial_id()
@@ -242,6 +278,7 @@ def init_db():
 
 
 def _table_exists(conn, table: str) -> bool:
+    """Check whether a table exists in the database."""
     if config.is_postgres():
         row = _fetchone(
             conn,
@@ -254,6 +291,7 @@ def _table_exists(conn, table: str) -> bool:
 
 
 def _column_exists(conn, table: str, column: str) -> bool:
+    """Check whether a column exists in a given table."""
     if config.is_postgres():
         row = _fetchone(
             conn,
@@ -266,6 +304,7 @@ def _column_exists(conn, table: str, column: str) -> bool:
 
 
 def _ensure_indexes(conn):
+    """Create standard indexes on articles, revisions, talk_messages, etc."""
     indexes = [
         "CREATE INDEX IF NOT EXISTS idx_articles_slug ON articles(slug)",
         "CREATE INDEX IF NOT EXISTS idx_revisions_article_id ON revisions(article_id)",
@@ -278,10 +317,24 @@ def _ensure_indexes(conn):
 
 
 def now():
+    """Return the current UTC timestamp as an ISO-8601 string.
+
+    Returns:
+        An ISO-formatted datetime string (e.g. ``2024-01-15T12:00:00+00:00``).
+    """
     return datetime.now(timezone.utc).isoformat()
 
 
 def slugify(title: str) -> str:
+    """Convert a title to a URL-safe slug.
+
+    Args:
+        title: The article title.
+
+    Returns:
+        A lowercase slug with underscores replacing spaces and non-alphanumeric
+        characters removed.
+    """
     s = title.lower().strip()
     s = "".join(c if c.isalnum() or c in " -_" else "" for c in s)
     s = s.replace(" ", "_").replace("-", "_")
@@ -291,14 +344,40 @@ def slugify(title: str) -> str:
 
 
 def agent_overview_slug(name: str) -> str:
+    """Generate the slug for an agent's overview article.
+
+    Args:
+        name: The agent name.
+
+    Returns:
+        A slug prefixed with ``agent_``.
+    """
     return f"agent_{slugify(name)}"
 
 
 def agent_overview_title(name: str) -> str:
+    """Generate the title for an agent's overview article.
+
+    Args:
+        name: The agent name.
+
+    Returns:
+        A title string like ``"AgentName (Agent Overview)"``.
+    """
     return f"{name} (Agent Overview)"
 
 
 def default_agent_overview_content(name: str, role: str = "external", *, builtin: bool | None = None) -> str:
+    """Return default markdown content for a new agent overview page.
+
+    Args:
+        name: The agent name.
+        role: The agent role (``'external'`` or ``'builtin'``).
+        builtin: Explicit builtin flag (overrides role check).
+
+    Returns:
+        Markdown string with placeholder sections.
+    """
     is_builtin = builtin if builtin is not None else role == "builtin"
     if is_builtin:
         from core.builtin_agents import default_builtin_overview_content
@@ -325,20 +404,49 @@ Describe what your agent does, its capabilities, and how it contributes to AIWik
 
 
 def is_agent_overview(article: dict) -> bool:
+    """Check whether an article is an agent overview page.
+
+    Args:
+        article: The article dict.
+
+    Returns:
+        True if ``article_kind`` is ``'agent_overview'``.
+    """
     return article.get("article_kind") == "agent_overview"
 
 
 def is_aitool(article: dict) -> bool:
+    """Check whether an article is an AI tool listing.
+
+    Args:
+        article: The article dict.
+
+    Returns:
+        True if ``article_kind`` is ``'aitool'``.
+    """
     return article.get("article_kind") == "aitool"
 
 
 def agent_can_edit_article(article: dict, agent_id: int) -> bool:
+    """Check whether an agent is allowed to edit a given article.
+
+    Non-overview articles are editable by any agent.  Overview articles
+    can only be edited by their owner.
+
+    Args:
+        article: The article dict.
+        agent_id: The agent's database ID.
+
+    Returns:
+        True if the agent may edit the article.
+    """
     if not is_agent_overview(article):
         return True
     return article.get("owner_agent_id") == agent_id
 
 
 def _unique_slug(conn, base_slug: str) -> str:
+    """Generate a unique slug by appending a numeric suffix if needed."""
     slug = base_slug
     suffix = 2
     p = _param_style()
@@ -356,6 +464,18 @@ def _create_agent_overview_conn(
     *,
     builtin: bool = False,
 ) -> dict | None:
+    """Create an agent overview article within an existing transaction.
+
+    Args:
+        conn: An open database connection.
+        agent_id: The agent's database ID.
+        agent_name: The agent's display name.
+        role: The agent role (``'external'`` or ``'builtin'``).
+        builtin: Whether this is a builtin agent.
+
+    Returns:
+        A dict with id, title, and slug, or None on failure.
+    """
     title = agent_overview_title(agent_name)
     slug = _unique_slug(conn, agent_overview_slug(agent_name))
     overview_role = "builtin" if builtin else role
@@ -394,6 +514,14 @@ def _create_agent_overview_conn(
 
 
 def seed_builtin_agents(conn) -> int:
+    """Insert builtin agents from ``BUILTIN_AGENTS`` and create their overview pages.
+
+    Args:
+        conn: An open database connection.
+
+    Returns:
+        The number of agents seeded (newly created).
+    """
     from core.builtin_agents import BUILTIN_AGENTS
 
     p = _param_style()
@@ -419,6 +547,12 @@ def seed_builtin_agents(conn) -> int:
 
 
 def update_agent_activity(agent_name: str, action: str = "") -> None:
+    """Record an agent's last-seen timestamp and latest action.
+
+    Args:
+        agent_name: The agent's name.
+        action: A short description of the action performed.
+    """
     conn = get_db()
     ts = now()
     p = _param_style()
@@ -440,6 +574,15 @@ def update_agent_activity(agent_name: str, action: str = "") -> None:
 
 
 def get_builtin_agent(name: str) -> dict | None:
+    """Look up a builtin agent by name.
+
+    Args:
+        name: The agent name.
+
+    Returns:
+        A dict with id, name, role, last_seen_at, last_action, last_action_at,
+        or None.
+    """
     conn = get_db()
     p = _param_style()
     row = _fetchone(
@@ -452,6 +595,14 @@ def get_builtin_agent(name: str) -> dict | None:
 
 
 def backfill_agent_overviews(conn) -> int:
+    """Create overview articles for active external agents that lack one.
+
+    Args:
+        conn: An open database connection.
+
+    Returns:
+        The number of overview articles created.
+    """
     rows = _fetchall(
         conn,
         "SELECT id, name, overview_article_id FROM external_agents WHERE is_active = 1",
@@ -476,6 +627,22 @@ def create_article(
     category: str = "science",
     tool_spec_json: str | None = None,
 ) -> dict | None:
+    """Create a new article with an initial revision.
+
+    Args:
+        title: The article title.
+        content: The article body (markdown or HTML).
+        agent_name: The name of the creating agent.
+        summary: A short edit summary for the initial revision.
+        article_kind: The article type (e.g. ``'encyclopedia'``, ``'aitool'``).
+        owner_agent_id: Optional agent ID that owns this article.
+        needs_review: Whether the article requires human review.
+        category: The topic category (e.g. ``'science'``, ``'history'``).
+        tool_spec_json: Optional JSON tool specification for AI tool articles.
+
+    Returns:
+        A dict with id, title, slug, and tool_spec_json, or None on failure.
+    """
     conn = get_db()
     title = sanitize(title)
     content = prepare_article_content(content)
@@ -512,6 +679,14 @@ def create_article(
 
 
 def get_article(slug: str) -> dict | None:
+    """Fetch an article by its URL slug.
+
+    Args:
+        slug: The article slug.
+
+    Returns:
+        The full article dict, or None.
+    """
     conn = get_db()
     row = _fetchone(conn, f"SELECT * FROM articles WHERE slug = {_param_style()}", (slug,))
     conn.close()
@@ -519,6 +694,14 @@ def get_article(slug: str) -> dict | None:
 
 
 def get_article_by_id(article_id: int) -> dict | None:
+    """Fetch an article by its database ID.
+
+    Args:
+        article_id: The article's primary key.
+
+    Returns:
+        The full article dict, or None.
+    """
     conn = get_db()
     row = _fetchone(conn, f"SELECT * FROM articles WHERE id = {_param_style()}", (article_id,))
     conn.close()
@@ -534,6 +717,19 @@ def update_article(
     tool_spec_json: str | None = None,
     update_tool_spec: bool = False,
 ) -> bool:
+    """Update an article's content and create a new revision.
+
+    Args:
+        article_id: The article's database ID.
+        content: The new article body.
+        agent_name: The name of the editing agent.
+        summary: A short edit summary.
+        tool_spec_json: Optional updated tool specification.
+        update_tool_spec: Whether to update the tool_spec_json column.
+
+    Returns:
+        True on success.
+    """
     conn = get_db()
     ts = now()
     p = _param_style()
@@ -554,6 +750,14 @@ def update_article(
 
 
 def get_revisions(article_id: int) -> list[dict]:
+    """Fetch all revisions for an article, newest first.
+
+    Args:
+        article_id: The article's database ID.
+
+    Returns:
+        A list of revision dicts.
+    """
     conn = get_db()
     rows = _fetchall(conn, f"SELECT * FROM revisions WHERE article_id = {_param_style()} ORDER BY timestamp DESC", (article_id,))
     conn.close()
@@ -561,6 +765,14 @@ def get_revisions(article_id: int) -> list[dict]:
 
 
 def get_revision(revision_id: int) -> dict | None:
+    """Fetch a single revision by its ID.
+
+    Args:
+        revision_id: The revision's primary key.
+
+    Returns:
+        The revision dict, or None.
+    """
     conn = get_db()
     row = _fetchone(conn, f"SELECT * FROM revisions WHERE id = {_param_style()}", (revision_id,))
     conn.close()
@@ -568,6 +780,18 @@ def get_revision(revision_id: int) -> dict | None:
 
 
 def add_talk_message(article_id: int, agent_name: str, message: str, parent_id: int | None = None, conn=None) -> int:
+    """Add a talk/discussion message to an article.
+
+    Args:
+        article_id: The article's database ID.
+        agent_name: The name of the agent posting the message.
+        message: The message content.
+        parent_id: Optional parent message ID for threading.
+        conn: An optional existing database connection (avoids creating a new one).
+
+    Returns:
+        The new message's database ID.
+    """
     own_conn = conn is None
     if own_conn:
         conn = get_db()
@@ -586,6 +810,14 @@ def add_talk_message(article_id: int, agent_name: str, message: str, parent_id: 
 
 
 def get_talk_messages(article_id: int) -> list[dict]:
+    """Fetch all talk messages for an article, oldest first.
+
+    Args:
+        article_id: The article's database ID.
+
+    Returns:
+        A list of message dicts.
+    """
     conn = get_db()
     rows = _fetchall(conn, f"SELECT * FROM talk_messages WHERE article_id = {_param_style()} ORDER BY timestamp ASC", (article_id,))
     conn.close()
@@ -593,6 +825,16 @@ def get_talk_messages(article_id: int) -> list[dict]:
 
 
 def register_external_agent(name: str, user_id: str | None = None) -> dict | None:
+    """Register a new external agent and create its overview article.
+
+    Args:
+        name: The agent's display name.
+        user_id: Optional user ID to link the agent to.
+
+    Returns:
+        A dict with id, name, api_key, overview_slug, and overview_url,
+        or None on failure (e.g. name already taken).
+    """
     conn = get_db()
     ts = now()
     name = sanitize(name)
@@ -635,6 +877,14 @@ def register_external_agent(name: str, user_id: str | None = None) -> dict | Non
 
 
 def verify_external_agent(api_key: str) -> dict | None:
+    """Verify an external agent's API key and update its last_seen_at.
+
+    Args:
+        api_key: The raw API key to verify.
+
+    Returns:
+        A dict with id, name, and user_id, or None if invalid.
+    """
     conn = get_db()
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     row = _fetchone(
@@ -652,10 +902,23 @@ def verify_external_agent(api_key: str) -> dict | None:
 
 
 def current_usage_period() -> str:
+    """Return the current usage-tracking period string (``YYYY-MM``).
+
+    Returns:
+        The year-month string for the current UTC date.
+    """
     return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
 def record_server_tool_invoke(user_id: str) -> int:
+    """Increment the server-tool invoke count for a user in the current period.
+
+    Args:
+        user_id: The user's UUID.
+
+    Returns:
+        The updated invoke count for the current period.
+    """
     period = current_usage_period()
     conn = get_db()
     p = _param_style()
@@ -680,6 +943,15 @@ def record_server_tool_invoke(user_id: str) -> int:
 
 
 def get_server_invoke_count(user_id: str, period: str | None = None) -> int:
+    """Get the server-tool invoke count for a user in a given period.
+
+    Args:
+        user_id: The user's UUID.
+        period: The period string (``YYYY-MM``). Defaults to the current period.
+
+    Returns:
+        The invoke count (0 if none).
+    """
     period = period or current_usage_period()
     conn = get_db()
     p = _param_style()
@@ -693,6 +965,7 @@ def get_server_invoke_count(user_id: str, period: str | None = None) -> int:
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
+    """Parse an ISO-8601 string to a timezone-aware datetime, or return None."""
     if not ts:
         return None
     try:
@@ -717,6 +990,21 @@ def resolve_agent_presence(
     threshold: int | None = None,
     now_dt: datetime | None = None,
 ) -> dict:
+    """Resolve an agent's presence status (active/afk/offline).
+
+    If a manual presence status is set it is returned directly.  Otherwise
+    the status is derived from the time since ``last_seen_at``.
+
+    Args:
+        last_seen_at: ISO-8601 timestamp of last activity.
+        presence_status: Manual presence override (``'active'``, ``'afk'``,
+            ``'offline'``, or ``'auto'``).
+        threshold: Seconds before an agent is considered offline.
+        now_dt: Reference datetime (defaults to current UTC time).
+
+    Returns:
+        A dict with presence, presence_mode, presence_label, and online.
+    """
     manual = (presence_status or "").strip().lower()
     if manual in PRESENCE_LABELS:
         return {
@@ -740,6 +1028,16 @@ def resolve_agent_presence(
 
 
 def set_agent_presence(api_key: str, status: str) -> dict | None:
+    """Set an external agent's manual presence status.
+
+    Args:
+        api_key: The agent's API key.
+        status: One of ``'active'``, ``'afk'``, ``'offline'``, or ``'auto'``.
+
+    Returns:
+        A dict with name, presence_setting, and resolved presence info,
+        or None if the agent is not found or inactive.
+    """
     status = status.strip().lower()
     if status not in ("auto", *PRESENCE_LABELS.keys()):
         return None
@@ -761,6 +1059,12 @@ def set_agent_presence(api_key: str, status: str) -> dict | None:
 
 
 def get_external_agents_status() -> list[dict]:
+    """Get the status of all agents (builtin and external) with presence info.
+
+    Returns:
+        A list of agent status dicts, sorted by builtin first, then presence,
+        then last_seen_at, then name.
+    """
     conn = get_db()
     external_rows = _fetchall(
         conn,
@@ -834,6 +1138,14 @@ def get_external_agents_status() -> list[dict]:
 
 
 def get_external_agents_by_user_id(user_id: str) -> list[dict]:
+    """Get all active external agents linked to a user.
+
+    Args:
+        user_id: The user's UUID.
+
+    Returns:
+        A list of agent dicts with presence info.
+    """
     conn = get_db()
     rows = _fetchall(
         conn,
@@ -863,6 +1175,16 @@ def get_external_agents_by_user_id(user_id: str) -> list[dict]:
 
 
 def link_external_agent_to_user(api_key: str, user_id: str) -> str | None:
+    """Link an external agent to a user account.
+
+    Args:
+        api_key: The agent's API key.
+        user_id: The user's UUID.
+
+    Returns:
+        ``'linked'`` on success, ``'already'`` if already linked to this user,
+        ``'conflict'`` if linked to a different user, or None if not found.
+    """
     agent = get_external_agent_details(api_key)
     if not agent or not agent.get("is_active"):
         return None
@@ -884,6 +1206,15 @@ def link_external_agent_to_user(api_key: str, user_id: str) -> str | None:
 
 
 def get_external_agent_by_name(name: str) -> dict | None:
+    """Look up an active external agent by name (case-insensitive).
+
+    Args:
+        name: The agent name.
+
+    Returns:
+        A dict with id, name, created_at, last_seen_at, overview info, and
+        presence, or None.
+    """
     conn = get_db()
     p = _param_style()
     row = _fetchone(
@@ -911,6 +1242,16 @@ def get_external_agent_by_name(name: str) -> dict | None:
 
 
 def get_external_agent_details(api_key: str) -> dict | None:
+    """Get full details for an external agent by API key.
+
+    Args:
+        api_key: The agent's raw API key.
+
+    Returns:
+        A dict with id, name, created_at, is_active, last_seen_at,
+        presence_status, overview_article_id, user_id, and overview_slug,
+        or None.
+    """
     conn = get_db()
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     row = _fetchone(
@@ -927,6 +1268,14 @@ def get_external_agent_details(api_key: str) -> dict | None:
 
 
 def get_agent_overview_by_agent_id(agent_id: int) -> dict | None:
+    """Fetch the overview article for an active external agent.
+
+    Args:
+        agent_id: The agent's database ID.
+
+    Returns:
+        The full article dict, or None.
+    """
     conn = get_db()
     row = _fetchone(
         conn,
@@ -940,6 +1289,17 @@ def get_agent_overview_by_agent_id(agent_id: int) -> dict | None:
 
 
 def update_agent_overview(agent_id: int, content: str, agent_name: str, summary: str = "") -> dict | None:
+    """Update an agent's overview article content.
+
+    Args:
+        agent_id: The agent's database ID.
+        content: The new markdown content.
+        agent_name: The name of the agent making the update.
+        summary: A short edit summary.
+
+    Returns:
+        A dict with slug and title, or None if the agent has no overview.
+    """
     article = get_agent_overview_by_agent_id(agent_id)
     if not article:
         return None
@@ -948,6 +1308,14 @@ def update_agent_overview(agent_id: int, content: str, agent_name: str, summary:
 
 
 def regenerate_external_agent_api_key(api_key: str) -> dict | None:
+    """Generate a new API key for an external agent, invalidating the old one.
+
+    Args:
+        api_key: The current API key.
+
+    Returns:
+        A dict with id, name, and the new api_key, or None if not found.
+    """
     agent = get_external_agent_details(api_key)
     if not agent or not agent.get("is_active"):
         return None
@@ -966,6 +1334,14 @@ def regenerate_external_agent_api_key(api_key: str) -> dict | None:
 
 
 def delete_external_agent(api_key: str) -> bool:
+    """Delete an external agent and its overview article, revisions, and talk messages.
+
+    Args:
+        api_key: The agent's API key.
+
+    Returns:
+        True if deleted, False if not found.
+    """
     agent = get_external_agent_details(api_key)
     if not agent:
         return False
@@ -983,6 +1359,15 @@ def delete_external_agent(api_key: str) -> bool:
 
 
 def rename_external_agent(api_key: str, new_name: str) -> dict | None:
+    """Rename an external agent and update its overview article title.
+
+    Args:
+        api_key: The agent's current API key.
+        new_name: The new name (must be at least 2 characters).
+
+    Returns:
+        A dict with id and the new name, or None if not found or name taken.
+    """
     new_name = new_name.strip()
     if len(new_name) < 2:
         return None
@@ -1015,6 +1400,11 @@ def rename_external_agent(api_key: str, new_name: str) -> dict | None:
 
 
 def get_all_articles() -> list[dict]:
+    """Fetch all articles (id, title, slug, updated_at, article_kind), newest first.
+
+    Returns:
+        A list of article summary dicts.
+    """
     conn = get_db()
     rows = _fetchall(conn, "SELECT id, title, slug, updated_at, article_kind FROM articles ORDER BY updated_at DESC")
     conn.close()
@@ -1034,6 +1424,11 @@ def get_articles_needing_review() -> list[dict]:
 
 
 def clear_needs_review(article_id: int):
+    """Mark an article as reviewed.
+
+    Args:
+        article_id: The article's database ID.
+    """
     """Mark an article as reviewed."""
     conn = get_db()
     p = _param_style()
@@ -1066,6 +1461,11 @@ def queue_pending_topic(topic: str, source_article_id: int | None = None, catego
 
 
 def pop_pending_topic() -> tuple[str, str] | None:
+    """Get the oldest unpicked pending topic and mark it as picked.
+
+    Returns:
+        A ``(topic, category)`` tuple, or None if the queue is empty.
+    """
     """Get the oldest unpicked pending topic and mark it as picked."""
     import time
     conn = get_db()
@@ -1101,6 +1501,11 @@ def pop_pending_topic() -> tuple[str, str] | None:
 
 
 def get_pending_topic_count() -> int:
+    """Return the number of topics waiting to be picked.
+
+    Returns:
+        The count of pending topics with ``picked_at IS NULL``.
+    """
     conn = get_db()
     row = _fetchone(conn, "SELECT COUNT(*) AS cnt FROM pending_topics WHERE picked_at IS NULL")
     conn.close()
@@ -1197,6 +1602,12 @@ def pick_topic(category: str | None = None, exclude_slugs: set[str] | None = Non
 
 
 def mark_topic_written(title: str, category: str):
+    """Mark a topic as having been written.
+
+    Args:
+        title: The topic title.
+        category: The topic category.
+    """
     conn = get_db()
     p = _param_style()
     slug = slugify(title)
@@ -1208,6 +1619,11 @@ def mark_topic_written(title: str, category: str):
 
 
 def append_topics(new_topics: list[tuple[str, str]]):
+    """Insert new topics into the topics table, ignoring duplicates.
+
+    Args:
+        new_topics: A list of ``(title, category)`` tuples.
+    """
     if not new_topics:
         return
     conn = get_db()
@@ -1230,6 +1646,11 @@ def append_topics(new_topics: list[tuple[str, str]]):
 
 
 def count_unwritten_topics() -> int:
+    """Count topics that have not yet been written as articles.
+
+    Returns:
+        The number of unwritten topics.
+    """
     conn = get_db()
     is_written_false = "FALSE" if config.is_postgres() else "0"
     row = _fetchone(conn, f"SELECT COUNT(*) AS cnt FROM topics WHERE is_written = {is_written_false}")
@@ -1238,6 +1659,14 @@ def count_unwritten_topics() -> int:
 
 
 def log_agent_action(agent_name: str, action: str, article_id: int | None = None, details: str = ""):
+    """Record an agent action in the agent_logs table.
+
+    Args:
+        agent_name: The name of the agent.
+        action: A short action label (e.g. ``'improve_article'``).
+        article_id: Optional related article ID.
+        details: Optional free-text details.
+    """
     conn = get_db()
     ts = now()
     p = _param_style()
@@ -1280,6 +1709,14 @@ def delete_article(article_id: int) -> bool:
 
 
 def get_recent_changes(limit: int = 20) -> list[dict]:
+    """Fetch the most recent revisions for encyclopedia articles.
+
+    Args:
+        limit: Maximum number of changes to return (default 20).
+
+    Returns:
+        A list of revision dicts with article title and slug.
+    """
     conn = get_db()
     p = _param_style()
     rows = _fetchall(conn,
@@ -1293,6 +1730,14 @@ def get_recent_changes(limit: int = 20) -> list[dict]:
 
 
 def get_aitool_recent_changes(limit: int = 20) -> list[dict]:
+    """Fetch the most recent revisions for AI tool articles.
+
+    Args:
+        limit: Maximum number of changes to return (default 20).
+
+    Returns:
+        A list of revision dicts with article title and slug.
+    """
     conn = get_db()
     p = _param_style()
     rows = _fetchall(
@@ -1308,6 +1753,14 @@ def get_aitool_recent_changes(limit: int = 20) -> list[dict]:
 
 
 def get_aitools(limit: int | None = None) -> list[dict]:
+    """Fetch AI tool articles, newest first.
+
+    Args:
+        limit: Optional maximum number of results.
+
+    Returns:
+        A list of article summary dicts.
+    """
     conn = get_db()
     query = (
         "SELECT id, title, slug, updated_at, article_kind FROM articles "
@@ -1324,6 +1777,14 @@ def get_aitools(limit: int | None = None) -> list[dict]:
 
 
 def get_encyclopedia_articles(limit: int | None = None) -> list[dict]:
+    """Fetch encyclopedia articles, newest first.
+
+    Args:
+        limit: Optional maximum number of results.
+
+    Returns:
+        A list of article summary dicts.
+    """
     conn = get_db()
     query = (
         "SELECT id, title, slug, updated_at, article_kind FROM articles "
@@ -1340,12 +1801,26 @@ def get_encyclopedia_articles(limit: int | None = None) -> list[dict]:
 
 
 def get_migration_status() -> dict:
+    """Get the current database migration status.
+
+    Returns:
+        A dict from the migration runner with version info.
+    """
     from migrations.runner import get_migration_status as _status
 
     return _status()
 
 
 def search_aitools(query: str, limit: int = 25) -> list[dict]:
+    """Search AI tool articles by title or content.
+
+    Args:
+        query: The search string (must be at least 2 characters).
+        limit: Maximum results (default 25).
+
+    Returns:
+        A list of matching article summary dicts.
+    """
     q = query.strip()
     if not q or len(q) < 2:
         return []
@@ -1379,6 +1854,14 @@ def search_aitools(query: str, limit: int = 25) -> list[dict]:
 
 
 def check_aitool_title(title: str) -> dict:
+    """Check whether an AI tool title is available and find similar titles.
+
+    Args:
+        title: The proposed title.
+
+    Returns:
+        A dict with title, slug, exists, existing_slug, and similar list.
+    """
     slug = slugify(title)
     existing = get_article(slug)
     if existing and existing.get("article_kind") == "agent_overview":
@@ -1416,6 +1899,15 @@ def check_aitool_title(title: str) -> dict:
 
 
 def search_articles(query: str, limit: int = 25) -> list[dict]:
+    """Search encyclopedia articles by title or content.
+
+    Args:
+        query: The search string (must be at least 2 characters).
+        limit: Maximum results (default 25).
+
+    Returns:
+        A list of matching article summary dicts.
+    """
     q = query.strip()
     if not q or len(q) < 2:
         return []
@@ -1449,6 +1941,14 @@ def search_articles(query: str, limit: int = 25) -> list[dict]:
 
 
 def check_article_title(title: str) -> dict:
+    """Check whether an article title is available and find similar titles.
+
+    Args:
+        title: The proposed title.
+
+    Returns:
+        A dict with title, slug, exists, existing_slug, and similar list.
+    """
     slug = slugify(title)
     existing = get_article(slug)
     conn = get_db()
@@ -1486,6 +1986,15 @@ def check_article_title(title: str) -> dict:
 
 
 def get_external_agent_by_id(agent_id: int) -> dict | None:
+    """Look up an active external agent by its database ID.
+
+    Args:
+        agent_id: The agent's primary key.
+
+    Returns:
+        A dict with id, name, created_at, is_active, webhook_url, and
+        overview_slug, or None.
+    """
     conn = get_db()
     row = _fetchone(
         conn,
@@ -1500,6 +2009,14 @@ def get_external_agent_by_id(agent_id: int) -> dict | None:
 
 
 def get_agent_webhook_url(agent_id: int) -> str | None:
+    """Get the webhook URL for an active external agent.
+
+    Args:
+        agent_id: The agent's database ID.
+
+    Returns:
+        The webhook URL string, or None.
+    """
     conn = get_db()
     row = _fetchone(
         conn,
@@ -1514,6 +2031,15 @@ def get_agent_webhook_url(agent_id: int) -> str | None:
 
 
 def set_agent_webhook(agent_id: int, webhook_url: str | None) -> bool:
+    """Set or clear the webhook URL for an external agent.
+
+    Args:
+        agent_id: The agent's database ID.
+        webhook_url: The new webhook URL, or None to clear.
+
+    Returns:
+        True on success.
+    """
     conn = get_db()
     p = _param_style()
     _execute(conn, f"UPDATE external_agents SET webhook_url = {p} WHERE id = {p}", (webhook_url, agent_id))
@@ -1523,6 +2049,15 @@ def set_agent_webhook(agent_id: int, webhook_url: str | None) -> bool:
 
 
 def get_external_agent_activity(agent_id: int, limit: int = 20) -> list[dict]:
+    """Get recent activity (logs + revisions) for an external agent.
+
+    Args:
+        agent_id: The agent's database ID.
+        limit: Maximum activity items to return (default 20).
+
+    Returns:
+        A list of activity dicts sorted by timestamp descending.
+    """
     agent = get_external_agent_by_id(agent_id)
     if not agent:
         return []

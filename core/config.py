@@ -1,3 +1,10 @@
+"""Application configuration loaded from environment variables.
+
+All settings are read from ``AIWIKI_*`` environment variables (with a
+``.env`` file fallback via python-dotenv).  Defaults are provided for
+every variable so the application can run with zero configuration.
+"""
+
 import os
 from urllib.parse import urlparse
 
@@ -42,10 +49,20 @@ APP_VERSION = "0.5.2"
 
 
 def is_postgres() -> bool:
+    """Check whether the configured database is PostgreSQL.
+
+    Returns:
+        True if DATABASE_URL starts with ``postgresql://`` or ``postgres://``.
+    """
     return DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
 
 
 def get_postgres_config() -> dict:
+    """Parse the DATABASE_URL into a psycopg2 connection parameter dict.
+
+    Returns:
+        A dict with keys host, port, dbname, user, password.
+    """
     parsed = urlparse(DATABASE_URL)
     return {
         "host": parsed.hostname or "localhost",

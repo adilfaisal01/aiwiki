@@ -1,3 +1,10 @@
+"""Quality improver agent — expands and enhances existing articles.
+
+Rewrites thin articles (under 600 words / 4 sections) and addresses
+unresolved feedback from the critic and fact-checker agents. Uses the
+LLM when available, with a simulated fallback.
+"""
+
 from agents.base import BaseAgent, get_templates_for_category, load_prompt
 from agents.llm_client import generate_text, is_real_llm_enabled, wrap_content
 import core.database as db
@@ -7,12 +14,34 @@ IMPROVE_PROMPT = load_prompt("quality_improver")
 
 
 class QualityImprover(BaseAgent):
+    """Expands and enhances existing articles.
+
+    Rewrites articles that are too short or have unresolved feedback.
+    Delegates to the historian or scientist for simulated improvements
+    when no LLM is available.
+    """
+
     def __init__(self, historian=None, scientist=None):
+        """Initialize the quality improver.
+
+        Args:
+            historian: Historian agent instance (for simulated improvements).
+            scientist: Scientist agent instance (for simulated improvements).
+        """
         super().__init__("Quality Improver Quinn", "quality_improver")
         self.historian = historian
         self.scientist = scientist
 
     def act(self, context: dict) -> dict:
+        """Improve an article by expanding content or addressing feedback.
+
+        Args:
+            context: Dict with keys "article" (required) and "feedback"
+                     (optional feedback text to address).
+
+        Returns:
+            Dict with action "improved" or "noop".
+        """
         article = context.get("article")
         if not article:
             return {"action": "noop", "reason": "no article to improve"}
@@ -51,6 +80,18 @@ class QualityImprover(BaseAgent):
         return {"action": "improved", "article_id": article["id"], "slug": article["slug"], "topic": topic}
 
     def _simulate_improve(self, topic: str, content: str) -> str:
+        """Simulate article improvement using writer agents.
+
+        Selects the appropriate writer based on content keywords and
+        appends their draft to the original content.
+
+        Args:
+            topic: Article topic.
+            content: Original article content.
+
+        Returns:
+            Expanded content string.
+        """
         writer = self.historian if "history" in content.lower() or "century" in content.lower() else self.scientist
         draft = writer.act({"topic": topic})
         expanded = draft.get("content", "")

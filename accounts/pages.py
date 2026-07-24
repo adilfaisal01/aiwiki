@@ -1,3 +1,9 @@
+"""Account page routes (HTML responses).
+
+Provides server-rendered HTML pages for account login, profile,
+and settings management.
+"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
@@ -24,6 +30,15 @@ SETTINGS_NAV_SECTIONS = (
 
 
 def _localized_nav_sections(locale: str, sections: tuple[dict[str, str], ...]) -> tuple[dict[str, str], ...]:
+    """Translate navigation section labels for the given locale.
+
+    Args:
+        locale: Target locale string (e.g. "en", "fr").
+        sections: Tuple of section dicts with "id" and "label_key" keys.
+
+    Returns:
+        Tuple of section dicts with "id" and translated "label".
+    """
     return tuple(
         {"id": section["id"], "label": t(locale, section["label_key"])}
         for section in sections
@@ -31,6 +46,15 @@ def _localized_nav_sections(locale: str, sections: tuple[dict[str, str], ...]) -
 
 
 def _account_page_redirect(user: dict | None) -> RedirectResponse | None:
+    """Redirect unauthenticated or email-less users to the login page.
+
+    Args:
+        user: The current user dict, or None if not authenticated.
+
+    Returns:
+        A RedirectResponse to /account/login if the user is missing or
+        has no email, otherwise None.
+    """
     if not user:
         return RedirectResponse("/account/login", status_code=303)
     if not user.get("email"):
@@ -40,6 +64,16 @@ def _account_page_redirect(user: dict | None) -> RedirectResponse | None:
 
 @router.get("/account/login", response_class=HTMLResponse)
 async def account_login_page(request: Request):
+    """Render the account login/registration page.
+
+    Redirects authenticated users to /account.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        HTML response with the login template.
+    """
     user = accounts.user_from_request(request)
     if user and user.get("email"):
         return RedirectResponse("/account", status_code=303)
@@ -52,6 +86,16 @@ async def account_login_page(request: Request):
 
 @router.get("/account", response_class=HTMLResponse)
 async def account_page(request: Request):
+    """Render the account profile page.
+
+    Redirects unauthenticated users to the login page.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        HTML response with the account profile template.
+    """
     user = accounts.user_from_request(request)
     redirect = _account_page_redirect(user)
     if redirect:
@@ -71,6 +115,16 @@ async def account_page(request: Request):
 
 @router.get("/account/settings", response_class=HTMLResponse)
 async def account_settings_page(request: Request):
+    """Render the account settings/preferences page.
+
+    Redirects unauthenticated users to the login page.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        HTML response with the account preferences template.
+    """
     user = accounts.user_from_request(request)
     redirect = _account_page_redirect(user)
     if redirect:

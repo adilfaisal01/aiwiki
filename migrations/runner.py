@@ -1,3 +1,9 @@
+"""Database migration runner.
+
+Provides functions to apply, bootstrap, and inspect the status of
+schema migrations. Supports both SQLite and PostgreSQL backends.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -12,6 +18,11 @@ logger = logging.getLogger("aiwiki.migrations")
 
 
 def _ensure_migrations_table(conn) -> None:
+    """Create the schema_migrations tracking table if it does not exist.
+
+    Args:
+        conn: A database connection object.
+    """
     db._execute(
         conn,
         """
@@ -25,11 +36,29 @@ def _ensure_migrations_table(conn) -> None:
 
 
 def _get_applied_versions(conn) -> set[int]:
+    """Return the set of migration version numbers already applied.
+
+    Args:
+        conn: A database connection object.
+
+    Returns:
+        A set of applied version integers.
+    """
     rows = db._fetchall(conn, "SELECT version FROM schema_migrations ORDER BY version")
     return {row["version"] for row in rows}
 
 
 def _record_migration(conn, version: int, name: str, applied_at: str | None = None) -> None:
+    """Record a migration as applied in the schema_migrations table.
+
+    Uses INSERT OR IGNORE (SQLite) or ON CONFLICT DO NOTHING (PostgreSQL).
+
+    Args:
+        conn: A database connection object.
+        version: The migration version number.
+        name: The migration name.
+        applied_at: Optional timestamp; defaults to the current time.
+    """
     ts = applied_at or db.now()
     p = db._param_style()
     if config.is_postgres():
@@ -51,6 +80,14 @@ def _record_migration(conn, version: int, name: str, applied_at: str | None = No
 
 
 def _agents_missing_overviews(conn) -> list[dict]:
+    """Find external agents that are missing an overview article.
+
+    Args:
+        conn: A database connection object.
+
+    Returns:
+        A list of dicts with "id" and "name" for agents without overviews.
+    """
     if not db._table_exists(conn, "external_agents"):
         return []
     if not db._column_exists(conn, "external_agents", "overview_article_id"):
@@ -62,9 +99,16 @@ def _agents_missing_overviews(conn) -> list[dict]:
 
 
 def bootstrap_legacy_migrations(conn) -> list[int]:
-    """
-    Upgrade databases that existed before schema_migrations was introduced.
-    Infers which migrations already took effect and records them without re-running.
+    """Infer and record migrations for databases created before the runner existed.
+
+    Detects which schema changes are already present and records them as
+    applied without re-running the migration functions.
+
+    Args:
+        conn: A database connection object.
+
+    Returns:
+        A list of version numbers that were bootstrapped.
     """
     if _get_applied_versions(conn):
         return []
@@ -104,6 +148,19 @@ def bootstrap_legacy_migrations(conn) -> list[int]:
 
 
 def run_migrations(conn=None, *, close: bool = True) -> dict:
+    """Apply all pending database migrations.
+
+    Bootstraps legacy databases first, then applies any unapplied
+    migrations in order.
+
+    Args:
+        conn: Optional database connection; creates one if not provided.
+        close: Whether to close the connection after running (default True).
+
+    Returns:
+        A dict with current_version, target_version, pending, applied,
+        bootstrapped, and up_to_date status.
+    """
     own_conn = conn is None
     if own_conn:
         conn = db.get_db()
@@ -139,6 +196,16 @@ def run_migrations(conn=None, *, close: bool = True) -> dict:
 
 
 def get_migration_status(conn=None, *, close: bool = True) -> dict:
+    """Return the current migration status without applying anything.
+
+    Args:
+        conn: Optional database connection; creates one if not provided.
+        close: Whether to close the connection after querying (default True).
+
+    Returns:
+        A dict with current_version, target_version, up_to_date, applied,
+        and pending lists.
+    """
     own_conn = conn is None
     if own_conn:
         conn = db.get_db()
@@ -169,6 +236,16 @@ def get_migration_status(conn=None, *, close: bool = True) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point for database migration commands.
+
+    Supports ``status`` and ``upgrade`` subcommands.
+
+    Args:
+        argv: Command-line argument list; uses sys.argv if None.
+
+    Returns:
+        Exit code (0 on success, 1 on error).
+    """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="AIWiki database migrations")
     sub = parser.add_subparsers(dest="command", required=True)

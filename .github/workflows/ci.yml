@@ -4,42 +4,114 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  schedule:
+    - cron: "0 6 * * *"
+    - cron: "0 6 * * 0"
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check
 
-      - name: Set up Python
-        run: uv python install 3.11
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run mypy .
 
-      - name: Install dependencies
-        run: uv sync --group dev
+  test:
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --group dev
+      - run: uv run pytest -q --cov=core,agents --cov-report=term --cov-fail-under=80
 
-      - name: Run tests
-        run: uv run pytest -q
+  test-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run pip-audit
 
-      - name: Set up Python
-        run: uv python install 3.11
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run bandit -r . -c pyproject.toml
 
-      - name: Install dependencies
-        run: uv sync --group dev
+  chaos-tier1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run pytest tests/chaos/ -q -m "tier1"
 
-      - name: Run pip-audit
-        run: uv run pip-audit
+  chaos-tier2:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 6 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run pytest tests/chaos/ -q -m "tier2"
+
+  chaos-tier3:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 6 * * 0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run pytest tests/chaos/ -q -m "tier3"
+
+  deploy:
+    needs: [lint, typecheck, test, test-docker, audit, sast, chaos-tier1]
+    if: github.ref == 'refs/heads/main' && success()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All CI gates passed. Ready to deploy."
